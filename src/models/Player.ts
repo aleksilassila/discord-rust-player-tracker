@@ -1,4 +1,4 @@
-import { Player as PrismaPlayer } from "@prisma/client";
+import { Player as PrismaPlayer, PlaySession } from "@prisma/client";
 
 import prisma from "../prisma";
 import { PlayerInfo } from "../apis/battemetrics/get-player-info";
@@ -8,6 +8,10 @@ import Notifications from "./Notifications";
 import { syncCommands } from "../deploy-commands";
 
 export type PlayerModel = PrismaPlayer;
+export type TrackedPlayer = PlayerModel & {
+  nickname: string;
+  sessions: PlaySession[];
+};
 
 const Player = Object.assign(prisma.player, {
   async trackPlayer(
@@ -37,6 +41,7 @@ const Player = Object.assign(prisma.player, {
       },
     });
 
+    await this.updateSessions(playerId, guild.serverId || undefined);
     await syncCommands(discordGuild);
   },
   async untrackPlayer(playerId: string, discordGuild: Guild): Promise<any> {
@@ -68,31 +73,19 @@ const Player = Object.assign(prisma.player, {
     await syncCommands(discordGuild);
     return deleted;
   },
-  async createPlayer(
-    playerInfo: PlayerInfo,
-    guild: DiscordGuild,
-    nickname?: string
-  ) {
-    const playerNickname = nickname || playerInfo.attributes.name;
-
-    return prisma.player
-      .upsert({
-        where: {
-          id: playerInfo.id,
-        },
-        update: {},
-        create: {
-          id: playerInfo.id,
-          name: playerInfo.attributes.name,
-        },
-      })
-      .then(async (player) => {
-        await this.updateSessions(player.id);
-        await this.trackPlayer(player.id, guild, playerNickname);
-        return player;
-      });
+  async createPlayer(playerInfo: PlayerInfo) {
+    return prisma.player.upsert({
+      where: {
+        id: playerInfo.id,
+      },
+      update: {},
+      create: {
+        id: playerInfo.id,
+        name: playerInfo.attributes.name,
+      },
+    });
   },
-  async updateSessions(playerId: string) {
+  async updateSessions(playerId: string, serverId?: string) {
     const player = await prisma.player.findUnique({
       where: {
         id: playerId,
@@ -104,7 +97,10 @@ const Player = Object.assign(prisma.player, {
 
     if (!player) return;
 
-    const remoteSessions = await getSessions(player.id).catch(console.error);
+    const remoteSessions = await getSessions(
+      player.id,
+      serverId ? [serverId] : undefined
+    ).catch(console.error);
     if (!remoteSessions) return;
 
     for (const remoteSession of remoteSessions) {
@@ -120,6 +116,7 @@ const Player = Object.assign(prisma.player, {
           start: remoteSession.attributes.start,
           stop: remoteSession.attributes.stop,
           playerId: playerId,
+          serverId: remoteSession.relationships?.server?.data?.id,
         },
       });
     }
@@ -127,10 +124,24 @@ const Player = Object.assign(prisma.player, {
     await this.updateOnlineStatus(playerId);
   },
   async updateAllSessions() {
-    const players = await prisma.player.findMany({});
+    const players = await prisma.player.findMany({
+      include: {
+        guilds: {
+          include: {
+            guild: true,
+          },
+        },
+      },
+    });
 
     for (const player of players) {
-      await this.updateSessions(player.id);
+      const uniqueServerIds = Array.from(
+        new Set(player.guilds.map((g) => g.guild.serverId))
+      );
+
+      for (const serverId of uniqueServerIds) {
+        await this.updateSessions(player.id, serverId || undefined);
+      }
     }
   },
   async updateOnlineStatus(playerId: string) {
@@ -165,5 +176,17 @@ const Player = Object.assign(prisma.player, {
       });
   },
 });
+
+export const getLastSession = function (
+  sessions: PlaySession[],
+  serverId?: string
+): PlaySession | null {
+  const sorted = sessions
+    .filter((s) => !serverId || s.serverId === serverId)
+    .sort((a, b) => b.start.getTime() - a.start.getTime());
+  if (!sorted.length) return null;
+
+  return sorted[0];
+};
 
 export default Player;

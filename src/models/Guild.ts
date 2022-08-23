@@ -1,5 +1,16 @@
 import prisma from "../prisma";
-import { bold, Client, TextChannel } from "discord.js";
+import {
+  bold,
+  Client,
+  TextChannel,
+  Guild as DiscordGuild,
+  EmbedBuilder,
+} from "discord.js";
+import { messages } from "../messages";
+import { Guild } from "@prisma/client";
+import { getServerInfo } from "../apis/battemetrics/get-server-info";
+
+export type GuildModel = Guild;
 
 const Guild = Object.assign(prisma.guild, {
   async updateGuilds(client: Client) {
@@ -20,14 +31,18 @@ const Guild = Object.assign(prisma.guild, {
     }
     console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
   },
-  async getTrackReport(guildId: string): Promise<string> {
+  async getPersistentMessage(guild: DiscordGuild): Promise<EmbedBuilder> {
     const players = await prisma.guildPlayerTracks
       .findMany({
         where: {
-          guildId,
+          guildId: guild.id,
         },
         include: {
-          player: true,
+          player: {
+            include: {
+              sessions: true,
+            },
+          },
         },
         orderBy: [
           {
@@ -44,16 +59,19 @@ const Guild = Object.assign(prisma.guild, {
       })
       .then((t) => t.map((t) => ({ ...t.player, nickname: t.nickname })));
 
-    return `${players.filter((p) => p.online).length}/${
-      players.length
-    } of tracked players online:\n${players
-      .map(
-        (p) =>
-          `> [${p.online ? "✅ Online" : "❌ Offline"}] ${bold(p.nickname)}`
-      )
-      .join("\n")}`;
+    const serverInfo = await prisma.guild
+      .findUnique({
+        where: { id: guild.id },
+      })
+      .then((g) => {
+        if (g?.serverId) {
+          return getServerInfo(g.serverId);
+        }
+      });
+
+    return messages.trackReport(players, serverInfo);
   },
-  async deliverTrackReports(client: Client) {
+  async updatePersistentMessages(client: Client) {
     await prisma.persistentMessage.findMany().then((messages) => {
       for (const message of messages) {
         const guild = client.guilds.cache.get(message.guildId);
@@ -66,12 +84,24 @@ const Guild = Object.assign(prisma.guild, {
               .fetch(message.id)
               .then(
                 async (fetchedMessage) =>
-                  await fetchedMessage.edit(await this.getTrackReport(guild.id))
+                  await fetchedMessage.edit({
+                    embeds: [await this.getPersistentMessage(guild)],
+                  })
               )
               .catch((e) => {});
           } catch (error) {}
         });
       }
+    });
+  },
+  async setTrackedServer(guildId: string, serverId: string | null) {
+    return await prisma.guild.update({
+      where: {
+        id: guildId,
+      },
+      data: {
+        serverId,
+      },
     });
   },
 });

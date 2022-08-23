@@ -8,6 +8,7 @@ import {
 } from "discord.js";
 import prisma from "../prisma";
 import Notifications from "../models/Notifications";
+import { messages } from "../messages";
 
 class NotificationsCommand extends SlashCommand {
   async data(guild: Guild): Promise<SlashCommandSubcommandsOnlyBuilder> {
@@ -81,24 +82,31 @@ class NotificationsCommand extends SlashCommand {
         })
         .then((ns) => ns.map((n) => n.player));
 
+      const user = await prisma.user.findUnique({
+        where: {
+          id: interaction.user.id,
+        },
+      });
+
       await interaction.reply({
-        content: `You have notifications enabled for the following people:\n${players
-          .map((p) => `> ${p.name}`)
-          .join("\n")}`,
+        content: messages.listNotifications(
+          !!user && user.enableNotifications,
+          players
+        ),
         ephemeral: true,
       });
       return;
     } else if (subcommand === "enable") {
       await Notifications.enableNotifications(interaction.user.id);
       await interaction.reply({
-        content: "All notifications enabled.",
+        content: messages.allNotificationsEnabled,
         ephemeral: true,
       });
       return;
     } else if (subcommand === "disable") {
       await Notifications.disableNotifications(interaction.user.id);
       await interaction.reply({
-        content: "All notifications disabled.",
+        content: messages.allNotificationsDisabled,
         ephemeral: true,
       });
       return;
@@ -108,7 +116,7 @@ class NotificationsCommand extends SlashCommand {
 
     if (!playerId) {
       await interaction.reply({
-        content: "Nickname is required",
+        content: messages.nicknameRequired,
         ephemeral: true,
       });
       return;
@@ -122,7 +130,7 @@ class NotificationsCommand extends SlashCommand {
 
     if (!targetPlayer) {
       await interaction.reply({
-        content: "Player not found.",
+        content: messages.playerNotFound,
         ephemeral: true,
       });
       return;
@@ -131,18 +139,14 @@ class NotificationsCommand extends SlashCommand {
     if (subcommand === "add") {
       await Notifications.addNotification(playerId, interaction.user.id);
       await interaction.reply({
-        content: `${bold("Enabled")} notifications for ${bold(
-          targetPlayer.name
-        )}.`,
+        content: messages.playerNotificationsEnabled(targetPlayer.name),
         ephemeral: true,
       });
       return;
     } else if (subcommand === "remove") {
       await Notifications.removeNotification(playerId, interaction.user.id);
       await interaction.reply({
-        content: `${bold("Disabled")} notifications for ${bold(
-          targetPlayer.name
-        )}.`,
+        content: messages.playerNotificationsDisabled(targetPlayer.name),
         ephemeral: true,
       });
       return;

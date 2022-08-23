@@ -32,8 +32,22 @@ export interface PlayerSession {
   };
 }
 
-export async function getSessions(playerId: string): Promise<PlayerSession[]> {
+export async function getSessions(
+  playerId: string,
+  serverIds?: string[]
+): Promise<PlayerSession[]> {
+  console.log(
+    "Fetching remote sessions for " +
+      playerId +
+      "," +
+      serverIds?.join(", ") +
+      "..."
+  );
+
   return fetch<{ data: PlayerSession[] }>({
     url: "/players/" + playerId + "/relationships/sessions",
+    params: {
+      ...(serverIds?.length && { "filter[servers]": serverIds.join(",") }),
+    },
   }).then((res) => res.data?.data);
 }

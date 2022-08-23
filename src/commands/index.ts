@@ -3,9 +3,11 @@ import { CommandInteraction } from "discord.js";
 
 export const getCommands = async (): Promise<SlashCommand[]> =>
   <Promise<SlashCommand[]>>(
-    Promise.all([import("./track"), import("./NotificationsCommand")]).then(
-      (modules) => modules.map((m) => new m.default())
-    )
+    Promise.all([
+      import("./track"),
+      import("./notifications"),
+      import("./server"),
+    ]).then((modules) => modules.map((m) => new m.default()))
   );
 
 export async function execute(interaction: CommandInteraction) {

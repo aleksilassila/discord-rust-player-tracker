@@ -25,6 +25,15 @@ model PlaySession {
   stop     DateTime?
   player   Player         @relation(fields: [playerId], references: [id])
   playerId String
+  serverId String
+}
+
+model Guild {
+  id       String          @id
+  name     String
+  players  GuildPlayerTracks[]
+  persistentMessage PersistentMessage?
+  serverId String?
 }
 
 model GuildPlayerTracks {
@@ -36,13 +45,6 @@ model GuildPlayerTracks {
   nickname String
 
   @@id([playerId, guildId])
-}
-
-model Guild {
-  id       String          @id
-  name     String
-  players  GuildPlayerTracks[]
-  persistentMessage PersistentMessage?
 }
 
 model PersistentMessage {

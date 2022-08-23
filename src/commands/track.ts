@@ -12,6 +12,7 @@ import {
 import Player from "../models/Player";
 import Guild from "../models/Guild";
 import prisma from "../prisma";
+import { messages } from "../messages";
 
 class Track implements SlashCommand {
   async data(guild: DiscordGuild): Promise<any> {
@@ -35,7 +36,7 @@ class Track implements SlashCommand {
         command
           .setName("add")
           .setDescription("Add player to track list")
-          .addNumberOption((option) =>
+          .addIntegerOption((option) =>
             option
               .setName("player-id")
               .setDescription("Player Battlemetrics id")
@@ -87,10 +88,10 @@ class Track implements SlashCommand {
     }
 
     if (subcommand === "add") {
-      const playerId = interaction.options.getNumber("player-id");
+      const playerId = interaction.options.getInteger("player-id");
 
       if (!playerId) {
-        await interaction.reply("Player id is required");
+        await interaction.reply(messages.playerIdRequired);
         return;
       }
       return this.executeAdd(
@@ -102,7 +103,7 @@ class Track implements SlashCommand {
       const playerId = interaction.options.getString("player-id");
 
       if (!playerId) {
-        await interaction.reply("Nickname is required.");
+        await interaction.reply(messages.nicknameRequired);
         return;
       }
 
@@ -129,15 +130,17 @@ class Track implements SlashCommand {
     const playerNickname =
       interaction.options.getString("nickname") || playerInfo.attributes.name;
 
-    Player.createPlayer(playerInfo, guild, playerNickname)
-      .then(
-        async () =>
-          await interaction.reply({
-            content: `Added player ${bold(playerInfo.attributes.name)} (${
-              playerInfo.id
-            }) as ${bold(playerNickname)}`,
-          })
-      )
+    Player.createPlayer(playerInfo)
+      .then(async () => {
+        await Player.trackPlayer(playerId, guild, playerNickname);
+        await interaction.reply({
+          content: messages.trackPlayer(
+            playerInfo.attributes.name,
+            playerInfo.id,
+            playerNickname
+          ),
+        });
+      })
       .catch(async (err) => {
         await interaction.reply("Error adding player");
         console.error(err);
@@ -150,7 +153,7 @@ class Track implements SlashCommand {
     guild: DiscordGuild
   ): Promise<void> {
     await Player.untrackPlayer(playerId, guild).then((b) =>
-      interaction.reply(b ? "Removed player" : "Player not found")
+      interaction.reply(b ? messages.untrackPlayer : messages.playerNotFound)
     );
   }
 
@@ -169,11 +172,7 @@ class Track implements SlashCommand {
       })
       .then((tracks) => tracks.map((track) => track.player));
 
-    await interaction.reply(
-      `${players.length} players tracked:\n${players
-        .map((player) => `> ${bold(player.name)} (${player.id})`)
-        .join("\n")}`
-    );
+    await interaction.reply(messages.listTrackedPlayers(players));
   }
 
   async executeReport(
@@ -181,7 +180,7 @@ class Track implements SlashCommand {
     guild: DiscordGuild
   ): Promise<void> {
     const reply = await interaction
-      .reply(await Guild.getTrackReport(guild.id))
+      .reply({ embeds: [await Guild.getPersistentMessage(guild)] })
       .then(async (r) => await interaction.fetchReply());
 
     await prisma.persistentMessage.upsert({
