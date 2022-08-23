@@ -66,9 +66,9 @@ class Track implements SlashCommand {
       )
       .addSubcommand((command) =>
         command
-          .setName("report")
+          .setName("stats")
           .setDescription(
-            "Get a report of tracked players that keeps updating. Only the latest report will be kept up to date."
+            "Get a track stats report of tracked players that is kept up to date."
           )
       );
   }
@@ -83,8 +83,8 @@ class Track implements SlashCommand {
 
     if (subcommand === "list") {
       return this.executeList(interaction, interaction.guild);
-    } else if (subcommand === "report") {
-      return this.executeReport(interaction, interaction.guild);
+    } else if (subcommand === "stats") {
+      return this.executeStats(interaction, interaction.guild);
     }
 
     if (subcommand === "add") {
@@ -175,12 +175,12 @@ class Track implements SlashCommand {
     await interaction.reply(messages.listTrackedPlayers(players));
   }
 
-  async executeReport(
+  async executeStats(
     interaction: ChatInputCommandInteraction,
     guild: DiscordGuild
   ): Promise<void> {
     const reply = await interaction
-      .reply({ embeds: [await Guild.getPersistentMessage(guild)] })
+      .reply(await Guild.getPersistentMessage(guild))
       .then(async (r) => await interaction.fetchReply());
 
     await prisma.persistentMessage.upsert({

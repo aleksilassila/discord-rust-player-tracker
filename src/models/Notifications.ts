@@ -2,93 +2,76 @@ import prisma from "../prisma";
 import { PlayerModel } from "./Player";
 import { client } from "../app";
 
-const Notifications = Object.assign(prisma.userPlayerNotification, {
-  async addNotification(playerId: string, userId: string) {
-    await prisma.user.upsert({
+const Notifications = Object.assign(prisma.guildUserNotifications, {
+  async enableNotifications(userId: string, guildId: string) {
+    return prisma.guildUserNotifications.upsert({
       where: {
-        id: userId,
-      },
-      update: {
-        enableNotifications: true,
-      },
-      create: {
-        id: userId,
-        enableNotifications: true,
-      },
-    });
-
-    return prisma.userPlayerNotification.upsert({
-      where: {
-        userId_playerId: {
+        userId_guildId: {
           userId,
-          playerId,
+          guildId,
         },
       },
       update: {},
       create: {
         userId,
-        playerId,
+        guildId,
       },
     });
   },
-  async removeNotification(playerId: string, userId: string) {
-    return prisma.userPlayerNotification
+  async disableNotifications(userId: string, guildId: string) {
+    return prisma.guildUserNotifications
       .delete({
         where: {
-          userId_playerId: {
+          userId_guildId: {
             userId,
-            playerId,
+            guildId,
           },
         },
       })
-      .catch((err) => undefined);
-  },
-  async enableNotifications(userId: string) {
-    return prisma.user.upsert({
-      where: {
-        id: userId,
-      },
-      update: {
-        enableNotifications: true,
-      },
-      create: {
-        id: userId,
-        enableNotifications: true,
-      },
-    });
-  },
-  async disableNotifications(userId: string) {
-    return prisma.user.upsert({
-      where: {
-        id: userId,
-      },
-      update: {
-        enableNotifications: false,
-      },
-      create: {
-        id: userId,
-        enableNotifications: false,
-      },
-    });
+      .catch((err) => {});
   },
   async sendNotifications(player: PlayerModel) {
-    const notifications = await prisma.userPlayerNotification.findMany({
-      where: {
-        playerId: player.id,
-        user: {
-          enableNotifications: true,
+    console.log("Sending notifications for", player);
+    // List of guilds that track that player
+    const guilds = await prisma.player
+      .findUnique({
+        where: {
+          id: player.id,
         },
-      },
-      include: {
-        user: true,
-      },
-    });
+        include: {
+          guilds: {
+            include: {
+              guild: {
+                include: {
+                  notifiees: {
+                    include: {
+                      user: true, // jeez
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+      .then((p) => p?.guilds?.map((g) => g.guild));
 
-    for (const n of notifications) {
+    if (!guilds) return;
+
+    const notifeeIds: string[] = [];
+
+    for (const g of guilds) {
+      console.log(g.notifiees);
+      for (const notifee of g.notifiees) {
+        notifeeIds.push(notifee.user.id);
+      }
+    }
+
+    for (const userId of Array.from(new Set(notifeeIds))) {
       await client.users.cache
-        .get(n.userId)
+        .get(userId)
         ?.send(
-          `${player.name} is now ${player.online ? "online" : "offline"}.`
+          `${player.name} is now ${player.serverId ? "online" : "offline"}.`
         );
     }
   },

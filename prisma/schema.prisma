@@ -14,9 +14,8 @@ model Player {
   id       String         @id
   name     String
   sessions PlaySession[]
-  online   Boolean        @default(value: false)
+  serverId String?
   guilds   GuildPlayerTracks[]
-  notifiees UserPlayerNotification[]
 }
 
 model PlaySession {
@@ -34,6 +33,7 @@ model Guild {
   players  GuildPlayerTracks[]
   persistentMessage PersistentMessage?
   serverId String?
+  notifiees GuildUserNotifications[]
 }
 
 model GuildPlayerTracks {
@@ -55,16 +55,15 @@ model PersistentMessage {
 
 model User {
   id       String          @id
-  notifications UserPlayerNotification[]
-  enableNotifications Boolean @default(value: false)
+  notifications GuildUserNotifications[]
 }
 
-model UserPlayerNotification {
+model GuildUserNotifications {
   user     User            @relation(fields: [userId], references: [id])
   userId   String
 
-  player   Player          @relation(fields: [playerId], references: [id])
-  playerId String
+  guild    Guild           @relation(fields: [guildId], references: [id])
+  guildId  String
 
-  @@id([userId, playerId])
+  @@id([userId, guildId])
 }

@@ -1,10 +1,9 @@
 import prisma from "../prisma";
 import {
-  bold,
   Client,
-  TextChannel,
-  Guild as DiscordGuild,
   EmbedBuilder,
+  Guild as DiscordGuild,
+  TextChannel,
 } from "discord.js";
 import { messages } from "../messages";
 import { Guild } from "@prisma/client";
@@ -31,7 +30,10 @@ const Guild = Object.assign(prisma.guild, {
     }
     console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
   },
-  async getPersistentMessage(guild: DiscordGuild): Promise<EmbedBuilder> {
+
+  async getPersistentMessage(
+    guild: DiscordGuild
+  ): Promise<{ embeds: EmbedBuilder[] }> {
     const players = await prisma.guildPlayerTracks
       .findMany({
         where: {
@@ -45,11 +47,6 @@ const Guild = Object.assign(prisma.guild, {
           },
         },
         orderBy: [
-          {
-            player: {
-              online: "desc",
-            },
-          },
           {
             player: {
               name: "asc",
@@ -69,8 +66,9 @@ const Guild = Object.assign(prisma.guild, {
         }
       });
 
-    return messages.trackReport(players, serverInfo);
+    return { embeds: [messages.trackStats(players, serverInfo)] };
   },
+
   async updatePersistentMessages(client: Client) {
     await prisma.persistentMessage.findMany().then((messages) => {
       for (const message of messages) {
@@ -84,9 +82,9 @@ const Guild = Object.assign(prisma.guild, {
               .fetch(message.id)
               .then(
                 async (fetchedMessage) =>
-                  await fetchedMessage.edit({
-                    embeds: [await this.getPersistentMessage(guild)],
-                  })
+                  await fetchedMessage.edit(
+                    await this.getPersistentMessage(guild)
+                  )
               )
               .catch((e) => {});
           } catch (error) {}
@@ -94,6 +92,7 @@ const Guild = Object.assign(prisma.guild, {
       }
     });
   },
+
   async setTrackedServer(guildId: string, serverId: string | null) {
     return await prisma.guild.update({
       where: {

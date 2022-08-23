@@ -165,11 +165,15 @@ const Player = Object.assign(prisma.player, {
               id: playerId,
             },
             data: {
-              online: !session.stop,
+              serverId: session.stop ? null : session.serverId,
             },
           });
 
-          if (oldPlayer && newPlayer && oldPlayer.online !== newPlayer.online) {
+          if (
+            oldPlayer &&
+            newPlayer &&
+            oldPlayer.serverId !== newPlayer.serverId
+          ) {
             await Notifications.sendNotifications(newPlayer);
           }
         }
