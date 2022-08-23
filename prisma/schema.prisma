@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Player {
+  id       String         @id
+  name     String
+  sessions PlaySession[]
+  online   Boolean        @default(value: false)
+  guilds   GuildPlayerTracks[]
+  notifiees UserPlayerNotification[]
+}
+
+model PlaySession {
+  id       String         @id
+  start    DateTime
+  stop     DateTime?
+  player   Player         @relation(fields: [playerId], references: [id])
+  playerId String
+}
+
+model GuildPlayerTracks {
+  player   Player         @relation(fields: [playerId], references: [id])
+  playerId String
+  guild    Guild          @relation(fields: [guildId], references: [id])
+  guildId  String
+
+  nickname String
+
+  @@id([playerId, guildId])
+}
+
+model Guild {
+  id       String          @id
+  name     String
+  players  GuildPlayerTracks[]
+  persistentMessage PersistentMessage?
+}
+
+model PersistentMessage {
+  id       String          @id
+  guild    Guild           @relation(fields: [guildId], references: [id])
+  guildId  String          @unique
+}
+
+model User {
+  id       String          @id
+  notifications UserPlayerNotification[]
+  enableNotifications Boolean @default(value: false)
+}
+
+model UserPlayerNotification {
+  user     User            @relation(fields: [userId], references: [id])
+  userId   String
+
+  player   Player          @relation(fields: [playerId], references: [id])
+  playerId String
+
+  @@id([userId, playerId])
+}
