@@ -49,25 +49,49 @@ export const messages = {
     });
 
     const renderStatus = (p: TimedPlayer) =>
-      `${!p.serverId ? "🔴" : p.serverId === serverInfo?.id ? "🟢" : "🟠"}`;
+      `${
+        !p.serverId
+          ? `🔴 ${p.nickname}`
+          : p.serverId === serverInfo?.id
+          ? `🟢 ${p.nickname}`
+          : `🟠 ${p.nickname}`
+      }`;
     const renderPlaytime = (p: TimedPlayer) => {
       if (p.time) {
         const time =
           p.time.hours > 72 ? p.time.days + " days" : p.time.hours + " hours";
-        return p.serverId === serverInfo?.id ? ` for ${time}` : ` ${time} ago`;
+        return p.serverId === serverInfo?.id
+          ? `for ${bold(time)}`
+          : `${bold(time)} ago`;
       } else {
         return "";
       }
     };
 
-    const renderPlayerList = (ps: TimedPlayer[], online: boolean) =>
-      ps
-        .filter((p) => (online ? !!p.serverId : !p.serverId))
-        .sort((a, b) => (a.time?.hours || 0) - (b.time?.hours || 0))
-        .map(
-          (p) => `${renderStatus(p) + renderPlaytime(p)} | ${bold(p.nickname)}`
-        )
-        .join("\n");
+    const renderOnlineOn = (player: TimedPlayer) => {
+      const playtime = renderPlaytime(player);
+
+      if (player.serverId === serverInfo?.id) {
+        return `Online on ${serverInfo?.attributes.name} ${playtime}.\n`;
+      } else if (player.serverId) {
+        return `Currently online on other server. Last online on tracked server ${playtime}.\n`;
+      }
+
+      return `Last online on tracked server ${playtime}.\n`;
+    };
+
+    const renderWipeInfo = (player: TimedPlayer) => {
+      if (!serverInfo) return "";
+
+      return `Playtime since last wipe: ${bold("Todo")}`;
+    };
+
+    const renderPlayerField = (player: TimedPlayer) => {
+      return {
+        name: renderStatus(player),
+        value: `${renderOnlineOn(player)}${renderWipeInfo(player)}`,
+      };
+    };
 
     const builder = new EmbedBuilder()
       .setTitle("Tracked Players")
@@ -79,14 +103,23 @@ export const messages = {
         }/${players.length} of tracked players online:`
       )
       .addFields(
-        {
-          name: "Online",
-          value: renderPlayerList(timedPlayers, true),
-        },
-        {
-          name: "Offline",
-          value: renderPlayerList(timedPlayers, false),
-        }
+        ...timedPlayers
+          .sort((a, b) => {
+            if (
+              a.serverId === serverInfo?.id &&
+              b.serverId !== serverInfo?.id
+            ) {
+              return -1;
+            } else if (
+              a.serverId !== serverInfo?.id &&
+              b.serverId === serverInfo?.id
+            ) {
+              return 1;
+            }
+            return (a.time?.hours || 0) - (b.time?.hours || 0);
+          })
+          .slice(0, 25)
+          .map((p) => renderPlayerField(p))
       )
       .setFooter({ text: `Updated at ${new Date().toLocaleTimeString()}` });
 
