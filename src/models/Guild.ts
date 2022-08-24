@@ -3,14 +3,15 @@ import {
   Client,
   EmbedBuilder,
   Guild as DiscordGuild,
+  Message,
   TextChannel,
 } from "discord.js";
-import { messages } from "../messages";
 import { Guild as PrismaGuild } from "@prisma/client";
-import { getServerInfo } from "../apis/battemetrics/get-server-info";
 import Server from "./Server";
-import Player from "./Player";
+import Player, { analyzePlayer } from "./Player";
 import { syncGuildCommands } from "../deploy-commands";
+import { client } from "../app";
+import { renderOverviewEmbeds } from "../embeds/overview-embed";
 
 export type GuildModel = PrismaGuild;
 
@@ -40,6 +41,7 @@ const Guild = Object.assign(prisma.guild, {
 
     await Player.updatePlayerSessions(playerId, guild.serverId || undefined);
     await syncGuildCommands(guildId);
+    await this.updatePersistentMessage(guildId);
   },
   async untrackPlayer(guildId: string, playerId: string): Promise<any> {
     const player = await prisma.player.findUnique({
@@ -68,6 +70,7 @@ const Guild = Object.assign(prisma.guild, {
       .catch(() => undefined);
 
     await syncGuildCommands(guildId);
+    await this.updatePersistentMessage(guildId);
     return deleted;
   },
   async updateGuilds(client: Client) {
@@ -89,7 +92,19 @@ const Guild = Object.assign(prisma.guild, {
     console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
   },
 
-  async getPersistentMessage(guild: DiscordGuild): Promise<EmbedBuilder[]> {
+  async getOverviewEmbeds(guild: DiscordGuild): Promise<EmbedBuilder[]> {
+    const trackedServer = await prisma.rustServer
+      .findFirst({
+        where: {
+          guilds: {
+            some: {
+              id: guild.id,
+            },
+          },
+        },
+      })
+      .then((s) => s || undefined);
+
     const players = await prisma.guildPlayerTracks
       .findMany({
         where: {
@@ -110,46 +125,73 @@ const Guild = Object.assign(prisma.guild, {
           },
         ],
       })
-      .then((t) => t.map((t) => ({ ...t.player, nickname: t.nickname })));
+      .then((guildPlayerTracks) =>
+        guildPlayerTracks.map((track) =>
+          analyzePlayer(track.player, track.nickname, trackedServer)
+        )
+      );
 
-    const server = await prisma.guild
-      .findUnique({
-        where: { id: guild.id },
-        include: {
-          server: true,
-        },
-      })
-      .then((g) => g?.server || undefined);
+    players.sort((a, b) => {
+      if (a.isOnline !== b.isOnline) {
+        return a.isOnline ? -1 : 1;
+      }
 
-    return messages.overviewEmbed(players, server);
+      return (
+        (a.offlineTimeMs || a.onlineTimeMs || 0) -
+        (b.offlineTimeMs || b.onlineTimeMs || 0)
+      );
+    });
+
+    return renderOverviewEmbeds(players, trackedServer);
   },
 
-  async updateAllPersistentMessages(client: Client) {
-    await prisma.persistentMessage
-      .findMany({ where: { key: "overview" } })
-      .then(async (messages) => {
-        for (const message of messages) {
-          const guild = client.guilds.cache.get(message.guildId);
-          if (!guild) continue;
+  async updatePersistentMessage(guildId: string) {
+    const messages = await prisma.persistentMessage.findMany({
+      where: {
+        guildId,
+        key: "overview",
+      },
+    });
 
-          const embeds = await this.getPersistentMessage(guild);
+    const discordGuild = await client.guilds.fetch(guildId);
 
-          guild.channels.cache.forEach((channel) => {
-            try {
-              const textChannel = channel as TextChannel;
-              textChannel.messages
-                .fetch(message.id)
-                .then(
-                  async (fetchedMessage) =>
-                    await fetchedMessage.edit({
-                      embeds: [embeds[message.pageIndex]],
-                    })
-                )
-                .catch((e) => {});
-            } catch (error) {}
-          });
+    if (!messages || !discordGuild) return;
+
+    const embeds = await this.getOverviewEmbeds(discordGuild);
+
+    for (const message of messages) {
+      await this.getGuildMessage(discordGuild, message.id).then(
+        (discordMessage) => {
+          if (discordMessage) {
+            discordMessage.edit({ embeds: [embeds[message.pageIndex]] });
+          }
         }
-      });
+      );
+    }
+  },
+
+  async updateAllPersistentMessages() {
+    const allGuilds = await prisma.guild.findMany({});
+
+    for (const guild of allGuilds) {
+      await this.updatePersistentMessage(guild.id);
+    }
+  },
+
+  async getGuildMessage(
+    guild: DiscordGuild,
+    messageId: string
+  ): Promise<Message | undefined> {
+    for (const channel of Array.from(guild.channels.cache.values())) {
+      const textChannel = channel as TextChannel;
+      const message = await textChannel.messages
+        ?.fetch(messageId)
+        .catch(() => {});
+
+      if (message) return message;
+    }
+
+    return;
   },
 
   async setTrackedServer(

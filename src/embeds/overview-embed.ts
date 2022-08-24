@@ -1,31 +1,15 @@
 import {
   analyzeBedtimeSessions,
+  formatAsDays,
   formatAsHours,
-  getTimeBetweenDates,
   timePlayedSince,
 } from "../utils";
-import { TrackedPlayer } from "../models/Player";
 import { bold, EmbedBuilder } from "discord.js";
 import { RustServer } from "@prisma/client";
 import { messages } from "../messages";
+import { AnalyzedPlayer } from "../models/Player";
 
-type TimedPlayer = TrackedPlayer & {
-  time: ReturnType<typeof getTimeBetweenDates> | null;
-};
-
-const isOnline = (player: TimedPlayer, trackedServer?: RustServer) =>
-  player.serverId === trackedServer?.id || (!trackedServer && player.serverId);
-
-const sortByOnline = (players: TimedPlayer[], trackedServer?: RustServer) =>
-  players.slice().sort((a, b) => {
-    if (isOnline(a, trackedServer) !== isOnline(b, trackedServer)) {
-      return isOnline(a, trackedServer) ? -1 : 1;
-    }
-
-    return (a.time?.hours || 0) - (b.time?.hours || 0);
-  });
-
-const renderStatus = (p: TimedPlayer, trackedServer?: RustServer) =>
+const renderStatus = (p: AnalyzedPlayer, trackedServer?: RustServer) =>
   `${
     !p.serverId
       ? `🔴 | ${p.nickname}`
@@ -34,22 +18,30 @@ const renderStatus = (p: TimedPlayer, trackedServer?: RustServer) =>
       : `🟠 | ${p.nickname}`
   }`;
 
-const renderPlaytime = (p: TimedPlayer, trackedServer?: RustServer) => {
-  if (p.time) {
-    const time =
-      p.time.hours > 72 ? p.time.days + " days" : p.time.hours + " hours";
-    return (!trackedServer && p.serverId) || p.serverId === trackedServer?.id
-      ? `for ${bold(time)}`
-      : `${bold(time)} ago`;
+const renderPlaytime = (p: AnalyzedPlayer) => {
+  const time = p.onlineTimeMs || p.offlineTimeMs || 0;
+
+  if (time === 0) return "";
+
+  const hrTime =
+    formatAsHours(time) > 72
+      ? formatAsDays(time) + " days"
+      : formatAsHours(time) + " hours";
+
+  if (p.onlineTimeMs !== undefined) {
+    return `for ${bold(hrTime)}`;
   } else {
-    return "";
+    return `${bold(hrTime)} ago`;
   }
 };
 
-const renderOnlineInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
+const renderOnlineInfo = (
+  player: AnalyzedPlayer,
+  trackedServer?: RustServer
+) => {
   const playtime = renderPlaytime(player);
 
-  if (isOnline(player, trackedServer)) {
+  if (player.isOnline) {
     return `Online ${
       trackedServer ? `on ${trackedServer.name} ` : ""
     }${playtime}.\n`;
@@ -62,7 +54,7 @@ const renderOnlineInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
   }${playtime}.\n`;
 };
 
-const renderWipeInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
+const renderWipeInfo = (player: AnalyzedPlayer, trackedServer?: RustServer) => {
   if (!trackedServer) return "";
 
   const time = timePlayedSince(
@@ -73,32 +65,35 @@ const renderWipeInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
   return `Playtime since wipe: ${bold(formatAsHours(time) + " hours")}\n`;
 };
 
-const renderSleepData = (player: TimedPlayer) => {
-  if (player.sessions.length < 5) return "";
-
-  const data = analyzeBedtimeSessions(player.sessions);
-
-  if (!data) return "";
+const renderSleepData = (player: AnalyzedPlayer) => {
+  if (!player.bedtimeData) return "";
 
   const bedtime =
-    bold(data.averageBedtime) +
-    ` ±(~${data.averageBedtimeDeviationInHrs.toString()}h)` +
-    ` (GMT+${data.tzOffsetInHrs})`;
+    bold(player.bedtimeData.averageBedtime) +
+    ` ±(~${player.bedtimeData.averageBedtimeDeviationInHrs.toString()}h)` +
+    ` (GMT+${player.bedtimeData.tzOffsetInHrs})`;
 
   const wakeUpTime =
-    bold(data.averageWakeUpTime) +
-    ` ±(~${data.averageWakeUpTimeDeviationInHrs.toString()}h)` +
-    ` (GMT+${data.tzOffsetInHrs})`;
+    bold(player.bedtimeData.averageWakeUpTime) +
+    ` ±(~${player.bedtimeData.averageWakeUpTimeDeviationInHrs.toString()}h)` +
+    ` (GMT+${player.bedtimeData.tzOffsetInHrs})`;
 
   return (
     `\nAverage bedtime: ${bedtime}\n` +
     `Average wake-up time: ${wakeUpTime}\n\n` +
-    `Average sleep time: ${bold(data.averageSleepTimeInHrs + " hours")}\n` +
-    `Shortest sleep time: ${bold(data.minSleepTimeInHrs + " hours")}\n`
+    `Average sleep time: ${bold(
+      player.bedtimeData.averageSleepTimeInHrs + " hours"
+    )}\n` +
+    `Shortest sleep time: ${bold(
+      player.bedtimeData.minSleepTimeInHrs + " hours"
+    )}\n`
   );
 };
 
-const renderPlayerField = (player: TimedPlayer, trackedServer?: RustServer) => {
+const renderPlayerField = (
+  player: AnalyzedPlayer,
+  trackedServer?: RustServer
+) => {
   return {
     name: renderStatus(player, trackedServer),
     value:
@@ -111,13 +106,28 @@ const renderPlayerField = (player: TimedPlayer, trackedServer?: RustServer) => {
   };
 };
 
-export const getOverviewEmbed = (
-  timedPlayers: TimedPlayer[],
+export const renderOverviewEmbeds = (
+  players: AnalyzedPlayer[],
+  trackedServer?: RustServer
+) => {
+  if (!players.length)
+    return [new EmbedBuilder().setTitle("No players to report on.")];
+
+  const pageCount = Math.ceil(players.length / 10);
+  const builders = [];
+  for (let i = 0; i < pageCount; i++) {
+    builders.push(renderOverviewEmbed(players, i, pageCount, trackedServer));
+  }
+  return builders;
+};
+
+const renderOverviewEmbed = (
+  players: AnalyzedPlayer[],
   pageNumber: number,
   pageCount: number,
   trackedServer?: RustServer
 ): EmbedBuilder => {
-  const playerFields = sortByOnline(timedPlayers, trackedServer)
+  const playerFields = players
     .slice(pageNumber * 10, pageNumber * 10 + 10)
     .map((p) => renderPlayerField(p, trackedServer));
 
@@ -135,8 +145,8 @@ export const getOverviewEmbed = (
     builder
       .setTitle("Tracked Players")
       .setDescription(
-        `${timedPlayers.filter((p) => isOnline(p, trackedServer)).length}/${
-          timedPlayers.length
+        `${players.filter((p) => p.isOnline).length}/${
+          players.length
         } of tracked players online:`
       );
   }

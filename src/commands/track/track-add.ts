@@ -24,7 +24,7 @@ export const executeAdd = async function (
   const playerNickname =
     interaction.options.getString("nickname") || playerInfo.attributes.name;
 
-  Player.createPlayer(playerInfo)
+  Player.createMissingPlayer(playerInfo)
     .then(async () => {
       await Guild.trackPlayer(guild.id, playerId, playerNickname);
       await interaction.reply({

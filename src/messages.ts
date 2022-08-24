@@ -1,12 +1,7 @@
 import { PlaySession, RustServer } from "@prisma/client";
-import { getLastSession, PlayerModel, TrackedPlayer } from "./models/Player";
+import { PlayerModel } from "./models/Player";
 import { bold, EmbedBuilder, hyperlink } from "discord.js";
-import {
-  analyzeBedtimeSessions,
-  formatAsHours,
-  getTimeBetweenDates,
-} from "./utils";
-import { getOverviewEmbed } from "./embeds/overview-embed";
+import { analyzeBedtimeSessions, formatAsHours } from "./utils";
 
 export const messages = {
   guildRequired: "This command can only be used in a server.",
@@ -24,44 +19,6 @@ export const messages = {
     return `${players.length} players tracked:\n${players
       .map((player) => `> ${bold(player.name)} (${player.id})`)
       .join("\n")}`;
-  },
-  overviewEmbed(
-    players: TrackedPlayer[],
-    trackedServer?: RustServer
-  ): EmbedBuilder[] {
-    if (!players.length)
-      return [new EmbedBuilder().setTitle("No players to report on.")];
-
-    type TimedPlayer = TrackedPlayer & {
-      time: ReturnType<typeof getTimeBetweenDates> | null;
-    };
-
-    const timedPlayers: TimedPlayer[] = players.map((p) => {
-      const lastSession = getLastSession(p.sessions, trackedServer?.id);
-
-      if (!lastSession) return { ...p, time: null };
-
-      const time = getTimeBetweenDates(
-        new Date(),
-        !p.serverId && lastSession.stop !== null
-          ? lastSession.stop
-          : lastSession.start
-      );
-
-      return {
-        ...p,
-        time,
-      };
-    });
-
-    const pageCount = Math.ceil(timedPlayers.length / 10);
-
-    const embeds = [];
-    for (let i = 0; i < pageCount; i++) {
-      embeds.push(getOverviewEmbed(timedPlayers, i, pageCount, trackedServer));
-    }
-
-    return embeds;
   },
   trackPlayer(name: string, playerId: string, nickname: string) {
     return `Added player ${bold(name)} (${playerId}) as ${bold(nickname)}`;

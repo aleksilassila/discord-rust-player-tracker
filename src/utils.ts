@@ -8,6 +8,9 @@ export type BedtimeSession = PlaySession & {
 export const formatAsHours = (time: number) =>
   Math.round((time / 1000 / 60 / 60) * 10) / 10;
 
+export const formatAsDays = (time: number) =>
+  Math.round((formatAsHours(time) / 24) * 10) / 10;
+
 export const formatAsTime = (timeFromMidnight: number): string => {
   const floored = Math.floor(timeFromMidnight);
   const minutes = Math.floor((timeFromMidnight - floored) * 60);
@@ -16,18 +19,8 @@ export const formatAsTime = (timeFromMidnight: number): string => {
     .padStart(2, "0")}.${minutes.toString().padStart(2, "0")}`;
 };
 
-export const getTimeBetweenDates = (
-  date1: Date,
-  date2: Date
-): { hours: number; days: number } => {
-  const hours = (date1.getTime() - date2.getTime()) / 1000 / 60 / 60;
-  const days = hours / 24;
-
-  return {
-    hours: Math.round(hours * 10) / 10,
-    days: Math.round(days * 10) / 10,
-  };
-};
+export const getTimeBetweenDates = (date1: Date, date2: Date): number =>
+  date1.getTime() - date2.getTime();
 
 export const timePlayedSince = (sessions: PlaySession[], date: Date) => {
   let time = 0;
@@ -99,21 +92,21 @@ export const getBedtimeSessions = (
   }
 };
 
+export type BedtimeData = {
+  bedtimeSessions: BedtimeSession[];
+  tzOffsetInHrs: number;
+  averageBedtime: string;
+  averageBedtimeDeviationInHrs: number;
+  averageWakeUpTime: string;
+  averageWakeUpTimeDeviationInHrs: number;
+
+  averageSleepTimeInHrs: number;
+  minSleepTimeInHrs: number;
+};
+
 export const analyzeBedtimeSessions = (
   sessions: PlaySession[]
-):
-  | {
-      bedtimeSessions: BedtimeSession[];
-      tzOffsetInHrs: number;
-      averageBedtime: string;
-      averageBedtimeDeviationInHrs: number;
-      averageWakeUpTime: string;
-      averageWakeUpTimeDeviationInHrs: number;
-
-      averageSleepTimeInHrs: number;
-      minSleepTimeInHrs: number;
-    }
-  | undefined => {
+): BedtimeData | undefined => {
   const bedtimeSessions = getBedtimeSessions(sessions).slice(0, 3);
 
   if (bedtimeSessions.length < 2) return;
