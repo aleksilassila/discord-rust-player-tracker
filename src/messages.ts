@@ -1,13 +1,12 @@
-import { RustServer } from "@prisma/client";
+import { PlaySession, RustServer } from "@prisma/client";
 import { getLastSession, PlayerModel, TrackedPlayer } from "./models/Player";
 import { bold, EmbedBuilder, hyperlink } from "discord.js";
 import {
+  analyzeBedtimeSessions,
   formatAsHours,
-  formatAsUTCHours,
-  getLastSessionData,
   getTimeBetweenDates,
-  timePlayedSince,
 } from "./utils";
+import { getStatsEmbed } from "./embeds/stats-embed";
 
 export const messages = {
   guildRequired: "This command can only be used in a server.",
@@ -27,9 +26,9 @@ export const messages = {
   trackStats(
     players: TrackedPlayer[],
     trackedServer?: RustServer
-  ): EmbedBuilder {
+  ): EmbedBuilder[] {
     if (!players.length)
-      return new EmbedBuilder().setTitle("No players to report on.");
+      return [new EmbedBuilder().setTitle("No players to report on.")];
 
     type TimedPlayer = TrackedPlayer & {
       time: ReturnType<typeof getTimeBetweenDates> | null;
@@ -53,119 +52,14 @@ export const messages = {
       };
     });
 
-    const renderStatus = (p: TimedPlayer) =>
-      `${
-        !p.serverId
-          ? `🔴 | ${p.nickname}`
-          : p.serverId === trackedServer?.id
-          ? `🟢 | ${p.nickname}`
-          : `🟠 | ${p.nickname}`
-      }`;
+    const pageCount = Math.ceil(timedPlayers.length / 10);
 
-    const renderPlaytime = (p: TimedPlayer) => {
-      if (p.time) {
-        const time =
-          p.time.hours > 72 ? p.time.days + " days" : p.time.hours + " hours";
-        return p.serverId === trackedServer?.id
-          ? `for ${bold(time)}`
-          : `${bold(time)} ago`;
-      } else {
-        return "";
-      }
-    };
-
-    const renderOnlineOn = (player: TimedPlayer) => {
-      const playtime = renderPlaytime(player);
-
-      if (player.serverId === trackedServer?.id) {
-        return `Online on ${trackedServer?.name} ${playtime}.\n`;
-      } else if (player.serverId) {
-        return `Currently online on other server. Last online on tracked server ${playtime}.\n`;
-      }
-
-      return `Last online on tracked server ${playtime}.\n`;
-    };
-
-    const renderWipeInfo = (player: TimedPlayer) => {
-      if (!trackedServer) return "";
-
-      const time = timePlayedSince(
-        player.sessions.filter((s) => s.serverId === trackedServer.id),
-        trackedServer.wipe
-      );
-
-      return `Playtime since wipe: ${bold(formatAsHours(time) + " hours")}\n`;
-    };
-
-    const renderStopData = (player: TimedPlayer) => {
-      if (player.sessions.length < 5) return "";
-
-      const data = getLastSessionData(player.sessions);
-
-      if (!data) return "";
-
-      const tzOffset = new Date().getTimezoneOffset() / -60;
-
-      return `Average bedtime: ${bold(
-        formatAsUTCHours(data.averageStopTime + tzOffset)
-      )} ±(~${(
-        Math.round(data.averageStopTimeDeviation * 10) / 10
-      ).toString()}h) (GMT+${tzOffset})\nAverage sleep time: ${bold(
-        Math.round(data.averageSleepTime * 10) / 10 + " hours"
-      )}\nShortest sleep time: ${bold(data.minSleepTime + " hours")}\n`;
-    };
-
-    const renderPlayerField = (player: TimedPlayer) => {
-      return {
-        name: renderStatus(player),
-        value: `${renderOnlineOn(player)}${renderWipeInfo(
-          player
-        )}${renderStopData(player)}\n${this.playerLink(
-          "Battlemetrics",
-          player.id
-        )}\n`,
-      };
-    };
-
-    const builder = new EmbedBuilder()
-      .setTitle("Tracked Players")
-      .setDescription(
-        `${
-          players.filter((p) =>
-            trackedServer ? p.serverId === trackedServer?.id : !!p.serverId
-          ).length
-        }/${players.length} of tracked players online:`
-      )
-      .addFields(
-        ...timedPlayers
-          .sort((a, b) => {
-            if (
-              a.serverId === trackedServer?.id &&
-              b.serverId !== trackedServer?.id
-            ) {
-              return -1;
-            } else if (
-              a.serverId !== trackedServer?.id &&
-              b.serverId === trackedServer?.id
-            ) {
-              return 1;
-            }
-            return (a.time?.hours || 0) - (b.time?.hours || 0);
-          })
-          .slice(0, 25)
-          .map((p) => renderPlayerField(p))
-      )
-      .setFooter({ text: `Updated at ${new Date().toLocaleTimeString()}` });
-
-    if (trackedServer) {
-      builder.setAuthor({
-        name: "Tracking in: " + trackedServer.name,
-        url: trackedServer?.mapUrl || undefined,
-        iconURL: trackedServer?.mapPreview || undefined,
-      });
+    const embeds = [];
+    for (let i = 0; i < pageCount; i++) {
+      embeds.push(getStatsEmbed(timedPlayers, i, pageCount, trackedServer));
     }
 
-    return builder;
+    return embeds;
   },
   trackPlayer(name: string, playerId: string, nickname: string) {
     return `Added player ${bold(name)} (${playerId}) as ${bold(nickname)}`;
@@ -173,4 +67,41 @@ export const messages = {
   untrackPlayer: "Player removed.",
   unsetTrackedServer: "Unset tracked server.",
   setTrackedServer: "Tracked server set.",
+  trackedPlayerInfo(
+    player: PlayerModel & { sessions: (PlaySession & { server: RustServer })[] }
+  ) {
+    const sessions = player.sessions;
+    if (!sessions.length) return "";
+
+    const data = analyzeBedtimeSessions(sessions);
+
+    const fields = sessions.slice(0, 25).map((s) => {
+      const last = data?.bedtimeSessions?.map((l) => l.id).includes(s.id);
+
+      return {
+        name: `${last ? "🛌" : ""} ${s.server.name}`,
+        value:
+          `${s.id}\n` +
+          `Stopped at: ${bold(
+            s.stop?.toLocaleString("fi-FI") || "Ongoing"
+          )}\n` +
+          `Started at: ${bold(s.start.toLocaleString("fi-FI"))}\n` +
+          `Duration: ${bold(
+            s.stop
+              ? formatAsHours(s.stop.getTime() - s.start.getTime()) + " hours"
+              : "Ongoing"
+          )}\n` +
+          ``,
+      };
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle(player.name)
+      .setDescription(
+        `Stats for ${bold(this.playerLink(player.name, player.id))}`
+      )
+      .addFields(...fields);
+
+    return { embeds: [embed] };
+  },
 };

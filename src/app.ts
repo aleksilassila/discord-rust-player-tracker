@@ -10,10 +10,10 @@ export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const cronCallback = async function () {
   await Player.updateAllSessions();
-  await Guild.updatePersistentMessages(client);
+  await Guild.updateAllPersistentMessages(client);
 };
 
-const cronJob = new CronJob("*/7 * * * *", cronCallback, null);
+const cronJob = new CronJob("*/1 * * * *", cronCallback, null);
 
 client.once("ready", async () => {
   await syncAllGuildsCommands(client);

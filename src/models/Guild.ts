@@ -89,9 +89,7 @@ const Guild = Object.assign(prisma.guild, {
     console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
   },
 
-  async getPersistentMessage(
-    guild: DiscordGuild
-  ): Promise<{ embeds: EmbedBuilder[] }> {
+  async getPersistentMessage(guild: DiscordGuild): Promise<EmbedBuilder[]> {
     const players = await prisma.guildPlayerTracks
       .findMany({
         where: {
@@ -123,31 +121,35 @@ const Guild = Object.assign(prisma.guild, {
       })
       .then((g) => g?.server || undefined);
 
-    return { embeds: [messages.trackStats(players, server)] };
+    return messages.trackStats(players, server);
   },
 
-  async updatePersistentMessages(client: Client) {
-    await prisma.persistentMessage.findMany().then((messages) => {
-      for (const message of messages) {
-        const guild = client.guilds.cache.get(message.guildId);
-        if (!guild) continue;
+  async updateAllPersistentMessages(client: Client) {
+    await prisma.persistentMessage
+      .findMany({ where: { key: "stats" } })
+      .then(async (messages) => {
+        for (const message of messages) {
+          const guild = client.guilds.cache.get(message.guildId);
+          if (!guild) continue;
 
-        guild.channels.cache.forEach((channel) => {
-          try {
-            const textChannel = channel as TextChannel;
-            textChannel.messages
-              .fetch(message.id)
-              .then(
-                async (fetchedMessage) =>
-                  await fetchedMessage.edit(
-                    await this.getPersistentMessage(guild)
-                  )
-              )
-              .catch((e) => {});
-          } catch (error) {}
-        });
-      }
-    });
+          const embeds = await this.getPersistentMessage(guild);
+
+          guild.channels.cache.forEach((channel) => {
+            try {
+              const textChannel = channel as TextChannel;
+              textChannel.messages
+                .fetch(message.id)
+                .then(
+                  async (fetchedMessage) =>
+                    await fetchedMessage.edit({
+                      embeds: [embeds[message.pageIndex]],
+                    })
+                )
+                .catch((e) => {});
+            } catch (error) {}
+          });
+        }
+      });
   },
 
   async setTrackedServer(

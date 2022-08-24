@@ -35,7 +35,7 @@ model Guild {
   id       String          @id
   name     String
   players  GuildPlayerTracks[]
-  persistentMessage PersistentMessage?
+  persistentMessages PersistentMessage[]
   notifiees GuildUserNotifications[]
 
   server   RustServer?    @relation(fields: [serverId], references: [id])
@@ -56,8 +56,10 @@ model GuildPlayerTracks {
 
 model PersistentMessage {
   id       String          @id
+  pageIndex Int
+  key      String
   guild    Guild           @relation(fields: [guildId], references: [id])
-  guildId  String          @unique
+  guildId  String
 }
 
 model User {

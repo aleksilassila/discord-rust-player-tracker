@@ -15,7 +15,9 @@ export const syncGuildCommands = async (guildId: string) => {
     .put(Routes.applicationGuildCommands(DISCORD_CLIENT_ID, guildId), {
       body: commandsJSON,
     })
-    .then(() => console.log("Successfully registered application commands."))
+    .then(() =>
+      console.log("Successfully registered application commands.", commandsJSON)
+    )
     .catch(console.error);
 };
 
