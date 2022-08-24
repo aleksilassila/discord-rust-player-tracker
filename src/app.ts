@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { DISCORD_TOKEN } from "./config";
 import { execute } from "./commands";
-import { syncAllCommands } from "./deploy-commands";
+import { syncAllGuildsCommands } from "./deploy-commands";
 import { CronJob } from "cron";
 import Player from "./models/Player";
 import Guild from "./models/Guild";
@@ -16,7 +16,7 @@ const cronCallback = async function () {
 const cronJob = new CronJob("*/7 * * * *", cronCallback, null);
 
 client.once("ready", async () => {
-  await syncAllCommands(client);
+  await syncAllGuildsCommands(client);
   await Guild.updateGuilds(client);
   cronCallback().then(function () {
     cronJob.start();

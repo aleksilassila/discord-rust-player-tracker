@@ -17,7 +17,7 @@ export async function execute(interaction: CommandInteraction) {
   const commands = await getCommands();
 
   for (const command of commands) {
-    const data = await command.data(interaction.guild);
+    const data = await command.data(interaction.guild.id);
 
     if (data.name === commandName) {
       try {

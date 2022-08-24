@@ -6,12 +6,70 @@ import {
   TextChannel,
 } from "discord.js";
 import { messages } from "../messages";
-import { Guild } from "@prisma/client";
+import { Guild as PrismaGuild } from "@prisma/client";
 import { getServerInfo } from "../apis/battemetrics/get-server-info";
+import Server from "./Server";
+import Player from "./Player";
+import { syncGuildCommands } from "../deploy-commands";
 
-export type GuildModel = Guild;
+export type GuildModel = PrismaGuild;
 
 const Guild = Object.assign(prisma.guild, {
+  async trackPlayer(guildId: string, playerId: string, playerNickname: string) {
+    const player = await prisma.player.findUnique({
+      where: {
+        id: playerId,
+      },
+    });
+
+    const guild = await prisma.guild.findUnique({
+      where: {
+        id: guildId,
+      },
+    });
+
+    if (!player || !guild) return;
+
+    await prisma.guildPlayerTracks.create({
+      data: {
+        playerId,
+        guildId: guildId,
+        nickname: playerNickname,
+      },
+    });
+
+    await Player.updatePlayerSessions(playerId, guild.serverId || undefined);
+    await syncGuildCommands(guildId);
+  },
+  async untrackPlayer(guildId: string, playerId: string): Promise<any> {
+    const player = await prisma.player.findUnique({
+      where: {
+        id: playerId,
+      },
+    });
+
+    const guild = await prisma.guild.findUnique({
+      where: {
+        id: guildId,
+      },
+    });
+
+    if (!player || !guild) return;
+
+    const deleted = prisma.guildPlayerTracks
+      .delete({
+        where: {
+          playerId_guildId: {
+            playerId,
+            guildId: guildId,
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    await syncGuildCommands(guildId);
+    return deleted;
+  },
   async updateGuilds(client: Client) {
     const guilds = client.guilds.cache.map((guild) => guild);
     for (const guild of guilds) {
@@ -56,17 +114,16 @@ const Guild = Object.assign(prisma.guild, {
       })
       .then((t) => t.map((t) => ({ ...t.player, nickname: t.nickname })));
 
-    const serverInfo = await prisma.guild
+    const server = await prisma.guild
       .findUnique({
         where: { id: guild.id },
+        include: {
+          server: true,
+        },
       })
-      .then((g) => {
-        if (g?.serverId) {
-          return getServerInfo(g.serverId);
-        }
-      });
+      .then((g) => g?.server || undefined);
 
-    return { embeds: [messages.trackStats(players, serverInfo)] };
+    return { embeds: [messages.trackStats(players, server)] };
   },
 
   async updatePersistentMessages(client: Client) {
@@ -93,13 +150,31 @@ const Guild = Object.assign(prisma.guild, {
     });
   },
 
-  async setTrackedServer(guildId: string, serverId: string | null) {
+  async setTrackedServer(
+    guildId: string,
+    serverId?: string
+  ): Promise<GuildModel | undefined> {
+    if (!serverId) {
+      return await prisma.guild.update({
+        where: {
+          id: guildId,
+        },
+        data: {
+          serverId: null,
+        },
+      });
+    }
+
+    const server = await Server.getOrCreate(serverId);
+
+    if (!server) return;
+
     return await prisma.guild.update({
       where: {
         id: guildId,
       },
       data: {
-        serverId,
+        serverId: server.id,
       },
     });
   },

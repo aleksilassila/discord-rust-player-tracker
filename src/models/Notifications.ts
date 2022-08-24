@@ -4,19 +4,24 @@ import { client } from "../app";
 
 const Notifications = Object.assign(prisma.guildUserNotifications, {
   async enableNotifications(userId: string, guildId: string) {
-    return prisma.guildUserNotifications.upsert({
-      where: {
-        userId_guildId: {
-          userId,
-          guildId,
+    return prisma.user
+      .upsert({
+        where: {
+          id: userId,
         },
-      },
-      update: {},
-      create: {
-        userId,
-        guildId,
-      },
-    });
+        update: {
+          notifications: {
+            create: [{ guildId }],
+          },
+        },
+        create: {
+          id: userId,
+          notifications: {
+            create: [{ guildId }],
+          },
+        },
+      })
+      .catch((err) => {});
   },
   async disableNotifications(userId: string, guildId: string) {
     return prisma.guildUserNotifications
@@ -31,7 +36,6 @@ const Notifications = Object.assign(prisma.guildUserNotifications, {
       .catch((err) => {});
   },
   async sendNotifications(player: PlayerModel) {
-    console.log("Sending notifications for", player);
     // List of guilds that track that player
     const guilds = await prisma.player
       .findUnique({
@@ -61,18 +65,19 @@ const Notifications = Object.assign(prisma.guildUserNotifications, {
     const notifeeIds: string[] = [];
 
     for (const g of guilds) {
-      console.log(g.notifiees);
       for (const notifee of g.notifiees) {
         notifeeIds.push(notifee.user.id);
       }
     }
 
     for (const userId of Array.from(new Set(notifeeIds))) {
-      await client.users.cache
-        .get(userId)
-        ?.send(
-          `${player.name} is now ${player.serverId ? "online" : "offline"}.`
-        );
+      const user = await client.users.fetch(userId);
+
+      if (!user) console.log("Could not message", userId);
+
+      await user?.send(
+        `${player.name} is now ${player.serverId ? "online" : "offline"}.`
+      );
     }
   },
 });

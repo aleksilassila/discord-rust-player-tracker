@@ -3,9 +3,8 @@ import { Player as PrismaPlayer, PlaySession } from "@prisma/client";
 import prisma from "../prisma";
 import { PlayerInfo } from "../apis/battemetrics/get-player-info";
 import { getSessions } from "../apis/battemetrics";
-import { Guild, Guild as DiscordGuild } from "discord.js";
 import Notifications from "./Notifications";
-import { syncCommands } from "../deploy-commands";
+import Server from "./Server";
 
 export type PlayerModel = PrismaPlayer;
 export type TrackedPlayer = PlayerModel & {
@@ -14,65 +13,6 @@ export type TrackedPlayer = PlayerModel & {
 };
 
 const Player = Object.assign(prisma.player, {
-  async trackPlayer(
-    playerId: string,
-    discordGuild: Guild,
-    playerNickname: string
-  ) {
-    const player = await prisma.player.findUnique({
-      where: {
-        id: playerId,
-      },
-    });
-
-    const guild = await prisma.guild.findUnique({
-      where: {
-        id: discordGuild.id,
-      },
-    });
-
-    if (!player || !guild) return;
-
-    await prisma.guildPlayerTracks.create({
-      data: {
-        playerId,
-        guildId: discordGuild.id,
-        nickname: playerNickname,
-      },
-    });
-
-    await this.updateSessions(playerId, guild.serverId || undefined);
-    await syncCommands(discordGuild);
-  },
-  async untrackPlayer(playerId: string, discordGuild: Guild): Promise<any> {
-    const player = await prisma.player.findUnique({
-      where: {
-        id: playerId,
-      },
-    });
-
-    const guild = await prisma.guild.findUnique({
-      where: {
-        id: discordGuild.id,
-      },
-    });
-
-    if (!player || !guild) return;
-
-    const deleted = prisma.guildPlayerTracks
-      .delete({
-        where: {
-          playerId_guildId: {
-            playerId,
-            guildId: discordGuild.id,
-          },
-        },
-      })
-      .catch(() => undefined);
-
-    await syncCommands(discordGuild);
-    return deleted;
-  },
   async createPlayer(playerInfo: PlayerInfo) {
     return prisma.player.upsert({
       where: {
@@ -85,7 +25,7 @@ const Player = Object.assign(prisma.player, {
       },
     });
   },
-  async updateSessions(playerId: string, serverId?: string) {
+  async updatePlayerSessions(playerId: string, serverId?: string) {
     const player = await prisma.player.findUnique({
       where: {
         id: playerId,
@@ -104,6 +44,12 @@ const Player = Object.assign(prisma.player, {
     if (!remoteSessions) return;
 
     for (const remoteSession of remoteSessions) {
+      const server = await Server.getOrCreate(
+        remoteSession.relationships.server.data.id
+      );
+
+      if (!server) continue;
+
       await prisma.playSession.upsert({
         where: {
           id: remoteSession.id,
@@ -116,13 +62,14 @@ const Player = Object.assign(prisma.player, {
           start: remoteSession.attributes.start,
           stop: remoteSession.attributes.stop,
           playerId: playerId,
-          serverId: remoteSession.relationships?.server?.data?.id,
+          serverId: server.id,
         },
       });
     }
 
-    await this.updateOnlineStatus(playerId);
+    await this.updatePlayerServer(playerId);
   },
+
   async updateAllSessions() {
     const players = await prisma.player.findMany({
       include: {
@@ -140,44 +87,38 @@ const Player = Object.assign(prisma.player, {
       );
 
       for (const serverId of uniqueServerIds) {
-        await this.updateSessions(player.id, serverId || undefined);
+        await this.updatePlayerSessions(player.id, serverId || undefined);
       }
     }
   },
-  async updateOnlineStatus(playerId: string) {
-    await prisma.playSession
-      .findFirst({
-        where: {
-          playerId,
-        },
-        orderBy: {
-          start: "desc",
-        },
-      })
-      .then(async (session) => {
-        if (session) {
-          const oldPlayer = await prisma.player.findUnique({
-            where: { id: playerId },
-          });
+  async updatePlayerServer(playerId: string) {
+    const lastSession = await prisma.playSession.findFirst({
+      where: {
+        playerId,
+      },
+      orderBy: {
+        start: "desc",
+      },
+    });
 
-          const newPlayer = await prisma.player.update({
-            where: {
-              id: playerId,
-            },
-            data: {
-              serverId: session.stop ? null : session.serverId,
-            },
-          });
-
-          if (
-            oldPlayer &&
-            newPlayer &&
-            oldPlayer.serverId !== newPlayer.serverId
-          ) {
-            await Notifications.sendNotifications(newPlayer);
-          }
-        }
+    if (lastSession) {
+      const oldPlayer = await prisma.player.findUnique({
+        where: { id: playerId },
       });
+
+      const newPlayer = await prisma.player.update({
+        where: {
+          id: playerId,
+        },
+        data: {
+          serverId: lastSession.stop ? null : lastSession.serverId,
+        },
+      });
+
+      if (oldPlayer && newPlayer && oldPlayer.serverId !== newPlayer.serverId) {
+        await Notifications.sendNotifications(newPlayer);
+      }
+    }
   },
 });
 

@@ -1,11 +1,13 @@
-import player, {
-  getLastSession,
-  PlayerModel,
-  TrackedPlayer,
-} from "./models/Player";
+import { RustServer } from "@prisma/client";
+import { getLastSession, PlayerModel, TrackedPlayer } from "./models/Player";
 import { bold, EmbedBuilder, hyperlink } from "discord.js";
-import { ServerInfo } from "./apis/battemetrics/get-server-info";
-import { getTimeBetweenDates } from "./utils";
+import {
+  formatAsHours,
+  formatAsUTCHours,
+  getLastSessionData,
+  getTimeBetweenDates,
+  timePlayedSince,
+} from "./utils";
 
 export const messages = {
   guildRequired: "This command can only be used in a server.",
@@ -22,7 +24,10 @@ export const messages = {
       .map((player) => `> ${bold(player.name)} (${player.id})`)
       .join("\n")}`;
   },
-  trackStats(players: TrackedPlayer[], serverInfo?: ServerInfo): EmbedBuilder {
+  trackStats(
+    players: TrackedPlayer[],
+    trackedServer?: RustServer
+  ): EmbedBuilder {
     if (!players.length)
       return new EmbedBuilder().setTitle("No players to report on.");
 
@@ -31,7 +36,7 @@ export const messages = {
     };
 
     const timedPlayers: TimedPlayer[] = players.map((p) => {
-      const lastSession = getLastSession(p.sessions, serverInfo?.id);
+      const lastSession = getLastSession(p.sessions, trackedServer?.id);
 
       if (!lastSession) return { ...p, time: null };
 
@@ -51,16 +56,17 @@ export const messages = {
     const renderStatus = (p: TimedPlayer) =>
       `${
         !p.serverId
-          ? `🔴 ${p.nickname}`
-          : p.serverId === serverInfo?.id
-          ? `🟢 ${p.nickname}`
-          : `🟠 ${p.nickname}`
+          ? `🔴 | ${p.nickname}`
+          : p.serverId === trackedServer?.id
+          ? `🟢 | ${p.nickname}`
+          : `🟠 | ${p.nickname}`
       }`;
+
     const renderPlaytime = (p: TimedPlayer) => {
       if (p.time) {
         const time =
           p.time.hours > 72 ? p.time.days + " days" : p.time.hours + " hours";
-        return p.serverId === serverInfo?.id
+        return p.serverId === trackedServer?.id
           ? `for ${bold(time)}`
           : `${bold(time)} ago`;
       } else {
@@ -71,8 +77,8 @@ export const messages = {
     const renderOnlineOn = (player: TimedPlayer) => {
       const playtime = renderPlaytime(player);
 
-      if (player.serverId === serverInfo?.id) {
-        return `Online on ${serverInfo?.attributes.name} ${playtime}.\n`;
+      if (player.serverId === trackedServer?.id) {
+        return `Online on ${trackedServer?.name} ${playtime}.\n`;
       } else if (player.serverId) {
         return `Currently online on other server. Last online on tracked server ${playtime}.\n`;
       }
@@ -81,15 +87,43 @@ export const messages = {
     };
 
     const renderWipeInfo = (player: TimedPlayer) => {
-      if (!serverInfo) return "";
+      if (!trackedServer) return "";
 
-      return `Playtime since last wipe: ${bold("Todo")}`;
+      const time = timePlayedSince(
+        player.sessions.filter((s) => s.serverId === trackedServer.id),
+        trackedServer.wipe
+      );
+
+      return `Playtime since wipe: ${bold(formatAsHours(time) + " hours")}\n`;
+    };
+
+    const renderStopData = (player: TimedPlayer) => {
+      if (player.sessions.length < 5) return "";
+
+      const data = getLastSessionData(player.sessions);
+
+      if (!data) return "";
+
+      const tzOffset = new Date().getTimezoneOffset() / -60;
+
+      return `Average bedtime: ${bold(
+        formatAsUTCHours(data.averageStopTime + tzOffset)
+      )} ±(~${(
+        Math.round(data.averageStopTimeDeviation * 10) / 10
+      ).toString()}h) (GMT+${tzOffset})\nAverage sleep time: ${bold(
+        Math.round(data.averageSleepTime * 10) / 10 + " hours"
+      )}\nShortest sleep time: ${bold(data.minSleepTime + " hours")}\n`;
     };
 
     const renderPlayerField = (player: TimedPlayer) => {
       return {
         name: renderStatus(player),
-        value: `${renderOnlineOn(player)}${renderWipeInfo(player)}`,
+        value: `${renderOnlineOn(player)}${renderWipeInfo(
+          player
+        )}${renderStopData(player)}\n${this.playerLink(
+          "Battlemetrics",
+          player.id
+        )}\n`,
       };
     };
 
@@ -98,7 +132,7 @@ export const messages = {
       .setDescription(
         `${
           players.filter((p) =>
-            serverInfo ? p.serverId === serverInfo?.id : !!p.serverId
+            trackedServer ? p.serverId === trackedServer?.id : !!p.serverId
           ).length
         }/${players.length} of tracked players online:`
       )
@@ -106,13 +140,13 @@ export const messages = {
         ...timedPlayers
           .sort((a, b) => {
             if (
-              a.serverId === serverInfo?.id &&
-              b.serverId !== serverInfo?.id
+              a.serverId === trackedServer?.id &&
+              b.serverId !== trackedServer?.id
             ) {
               return -1;
             } else if (
-              a.serverId !== serverInfo?.id &&
-              b.serverId === serverInfo?.id
+              a.serverId !== trackedServer?.id &&
+              b.serverId === trackedServer?.id
             ) {
               return 1;
             }
@@ -123,11 +157,11 @@ export const messages = {
       )
       .setFooter({ text: `Updated at ${new Date().toLocaleTimeString()}` });
 
-    if (serverInfo) {
+    if (trackedServer) {
       builder.setAuthor({
-        name: "Tracking in: " + serverInfo.attributes.name,
-        url: serverInfo?.attributes?.details?.rust_maps?.url,
-        iconURL: serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
+        name: "Tracking in: " + trackedServer.name,
+        url: trackedServer?.mapUrl || undefined,
+        iconURL: trackedServer?.mapPreview || undefined,
       });
     }
 

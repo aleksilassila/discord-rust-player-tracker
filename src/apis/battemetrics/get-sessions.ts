@@ -48,6 +48,7 @@ export async function getSessions(
     url: "/players/" + playerId + "/relationships/sessions",
     params: {
       ...(serverIds?.length && { "filter[servers]": serverIds.join(",") }),
+      "page[size]": 100,
     },
   }).then((res) => res.data?.data);
 }

@@ -21,6 +21,14 @@ export interface ServerInfo {
       rust_last_wipe: string;
     };
   };
+  relationships: {
+    game: {
+      data: {
+        type: "game";
+        id: string;
+      };
+    };
+  };
 }
 
 export function getServerInfo(serverId: string): Promise<ServerInfo> {

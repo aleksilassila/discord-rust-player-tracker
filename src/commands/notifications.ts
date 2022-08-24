@@ -1,7 +1,6 @@
 import { SlashCommand } from "./slash-command";
 import {
   ChatInputCommandInteraction,
-  Guild,
   SlashCommandBuilder,
   SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
@@ -9,7 +8,7 @@ import Notifications from "../models/Notifications";
 import { messages } from "../messages";
 
 class NotificationsCommand extends SlashCommand {
-  async data(guild: Guild): Promise<SlashCommandSubcommandsOnlyBuilder> {
+  async data(guildId: string): Promise<SlashCommandSubcommandsOnlyBuilder> {
     return new SlashCommandBuilder()
       .setName("notifications")
       .setDescription("Manage player notifications")
@@ -40,10 +39,7 @@ class NotificationsCommand extends SlashCommand {
     }
 
     if (subcommand === "enable") {
-      await Notifications.enableNotifications(
-        interaction.user.id,
-        interaction.guild.id
-      );
+      await Notifications.enableNotifications(interaction.user.id, guild.id);
       await interaction.reply({
         content: messages.allNotificationsEnabled,
         ephemeral: true,

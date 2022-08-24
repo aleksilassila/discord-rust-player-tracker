@@ -1,14 +1,10 @@
 import { SlashCommand } from "./slash-command";
-import {
-  ChatInputCommandInteraction,
-  Guild as DiscordGuild,
-  SlashCommandBuilder,
-} from "discord.js";
+import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import Guild from "../models/Guild";
 import { messages } from "../messages";
 
 class Server implements SlashCommand {
-  async data(guild: DiscordGuild): Promise<any> {
+  async data(guildId: string): Promise<any> {
     return new SlashCommandBuilder()
       .setName("server")
       .setDescription("Set rust server to track.")
@@ -19,8 +15,8 @@ class Server implements SlashCommand {
           .addIntegerOption((option) =>
             option
               .setName("server-id")
-              .setDescription("Server Battlemetrics id. Leave empty to usnset.")
-              .setRequired(false)
+              .setDescription("Server Battlemetrics id.")
+              .setRequired(true)
           )
       )
       .addSubcommand((command) =>
@@ -41,18 +37,22 @@ class Server implements SlashCommand {
       return;
     }
 
-    const serverId =
-      interaction.options.getInteger("server-id")?.toString() || null;
+    const serverId = interaction.options.getInteger("server-id")?.toString();
 
     if (subcommand === "info") {
       await interaction.reply("Not implemented.");
       return;
     }
 
+    if (!serverId) {
+      await interaction.reply("Server id is required.");
+      return;
+    }
+
     if (subcommand === "set") {
       await Guild.setTrackedServer(interaction.guild.id, serverId);
     } else if (subcommand === "unset") {
-      await Guild.setTrackedServer(interaction.guild.id, null);
+      await Guild.setTrackedServer(interaction.guild.id);
     }
 
     await interaction.reply(

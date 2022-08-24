@@ -1,6 +1,5 @@
 import { SlashCommand } from "./slash-command";
 import {
-  bold,
   ChatInputCommandInteraction,
   Guild as DiscordGuild,
   SlashCommandBuilder,
@@ -15,11 +14,11 @@ import prisma from "../prisma";
 import { messages } from "../messages";
 
 class Track implements SlashCommand {
-  async data(guild: DiscordGuild): Promise<any> {
+  async data(guildId: string): Promise<any> {
     const removeChoices = await prisma.guildPlayerTracks
       .findMany({
         where: {
-          guildId: guild.id,
+          guildId,
         },
       })
       .then((users) =>
@@ -132,7 +131,7 @@ class Track implements SlashCommand {
 
     Player.createPlayer(playerInfo)
       .then(async () => {
-        await Player.trackPlayer(playerId, guild, playerNickname);
+        await Guild.trackPlayer(guild.id, playerId, playerNickname);
         await interaction.reply({
           content: messages.trackPlayer(
             playerInfo.attributes.name,
@@ -152,7 +151,7 @@ class Track implements SlashCommand {
     playerId: string,
     guild: DiscordGuild
   ): Promise<void> {
-    await Player.untrackPlayer(playerId, guild).then((b) =>
+    await Guild.untrackPlayer(guild.id, playerId).then((b) =>
       interaction.reply(b ? messages.untrackPlayer : messages.playerNotFound)
     );
   }

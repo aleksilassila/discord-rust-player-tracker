@@ -13,8 +13,11 @@ datasource db {
 model Player {
   id       String         @id
   name     String
-  sessions PlaySession[]
+
+  server   RustServer?     @relation(fields: [serverId], references: [id])
   serverId String?
+
+  sessions PlaySession[]
   guilds   GuildPlayerTracks[]
 }
 
@@ -24,6 +27,7 @@ model PlaySession {
   stop     DateTime?
   player   Player         @relation(fields: [playerId], references: [id])
   playerId String
+  server   RustServer     @relation(fields: [serverId], references: [id])
   serverId String
 }
 
@@ -32,8 +36,10 @@ model Guild {
   name     String
   players  GuildPlayerTracks[]
   persistentMessage PersistentMessage?
-  serverId String?
   notifiees GuildUserNotifications[]
+
+  server   RustServer?    @relation(fields: [serverId], references: [id])
+  serverId String?
 }
 
 model GuildPlayerTracks {
@@ -43,6 +49,7 @@ model GuildPlayerTracks {
   guildId  String
 
   nickname String
+  notes    String?
 
   @@id([playerId, guildId])
 }
@@ -66,4 +73,16 @@ model GuildUserNotifications {
   guildId  String
 
   @@id([userId, guildId])
+}
+
+model RustServer {
+  id       String          @id
+  name     String
+  wipe     DateTime
+  mapUrl   String?
+  mapPreview String?
+
+  players  Player[]
+  sessions PlaySession[]
+  guilds   Guild[]
 }
