@@ -19,11 +19,15 @@ export type PlayerModel = PrismaPlayer;
 
 export type AnalyzedSession = PlaySession & {};
 
-export type PlayerWithSessions = PlayerModel & { sessions: PlaySession[] };
+export type PlayerWithRelations = PlayerModel & {
+  sessions: PlaySession[];
+  server?: RustServer;
+};
 
 export type AnalyzedPlayer = PlayerModel & {
   nickname: string;
   sessions: AnalyzedSession[];
+  server?: RustServer;
   offlineTimeMs?: number;
   onlineTimeMs?: number;
   isOnline: boolean;
@@ -153,7 +157,7 @@ export const getLastSession = function (
 };
 
 export const analyzePlayer = function (
-  player: PlayerWithSessions,
+  player: PlayerWithRelations,
   nickname: string,
   trackedServer?: RustServer
 ): AnalyzedPlayer {

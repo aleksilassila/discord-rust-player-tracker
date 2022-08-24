@@ -4,19 +4,13 @@ import {
   formatAsHours,
   timePlayedSince,
 } from "../utils";
-import { bold, EmbedBuilder } from "discord.js";
+import { bold, EmbedBuilder, hyperlink } from "discord.js";
 import { RustServer } from "@prisma/client";
 import { messages } from "../messages";
 import { AnalyzedPlayer } from "../models/Player";
 
-const renderStatus = (p: AnalyzedPlayer, trackedServer?: RustServer) =>
-  `${
-    !p.serverId
-      ? `🔴 | ${p.nickname}`
-      : p.serverId === trackedServer?.id || (!trackedServer && p.serverId)
-      ? `🟢 | ${p.nickname}`
-      : `🟠 | ${p.nickname}`
-  }`;
+const renderStatus = (p: AnalyzedPlayer) =>
+  `${p.isOnline ? "🟢" : !!p.server ? "🟠" : "🔴"} | ${p.nickname} (${p.id})`;
 
 const renderPlaytime = (p: AnalyzedPlayer) => {
   const time = p.onlineTimeMs || p.offlineTimeMs || 0;
@@ -41,12 +35,10 @@ const renderOnlineInfo = (
 ) => {
   const playtime = renderPlaytime(player);
 
-  if (player.isOnline) {
+  if (player.server) {
     return `Online ${
-      trackedServer ? `on ${trackedServer.name} ` : ""
+      player.server ? `on ${player.server.name} ` : ""
     }${playtime}.\n`;
-  } else if (player.serverId && trackedServer) {
-    return `Currently online on other server. Last online on tracked server ${playtime}.\n`;
   }
 
   return `Last online ${
@@ -95,7 +87,7 @@ const renderPlayerField = (
   trackedServer?: RustServer
 ) => {
   return {
-    name: renderStatus(player, trackedServer),
+    name: renderStatus(player),
     value:
       renderOnlineInfo(player, trackedServer) +
       renderWipeInfo(player, trackedServer) +
@@ -104,6 +96,20 @@ const renderPlayerField = (
       messages.playerLink("Battlemetrics", player.id) +
       "\n",
   };
+};
+
+const renderDescription = (
+  players: AnalyzedPlayer[],
+  trackedServer?: RustServer
+) => {
+  const online = bold(
+    players
+      .filter((p) => (trackedServer ? p.isOnline : !!p.server))
+      .length.toString()
+  );
+  const total = bold(players.length.toString());
+
+  return `${online}/${total} tracked players online\n`;
 };
 
 export const renderOverviewEmbeds = (
@@ -136,8 +142,10 @@ const renderOverviewEmbed = (
   if (pageNumber === 0) {
     if (trackedServer) {
       builder.setAuthor({
-        name: "Tracking in: " + trackedServer.name,
-        url: trackedServer?.mapUrl || undefined,
+        name: "Tracking: " + trackedServer.name,
+        url:
+          "https://www.battlemetrics.com/servers/rust/" + trackedServer?.id ||
+          undefined,
         iconURL: trackedServer?.mapPreview || undefined,
       });
     }
@@ -145,9 +153,12 @@ const renderOverviewEmbed = (
     builder
       .setTitle("Tracked Players")
       .setDescription(
-        `${players.filter((p) => p.isOnline).length}/${
-          players.length
-        } of tracked players online:`
+        renderDescription(players, trackedServer) +
+          `${
+            trackedServer?.mapUrl
+              ? hyperlink(bold("View Server Map"), trackedServer?.mapUrl)
+              : ""
+          }\n`
       );
   }
 

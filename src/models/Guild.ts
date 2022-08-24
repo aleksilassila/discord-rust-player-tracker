@@ -41,7 +41,7 @@ const Guild = Object.assign(prisma.guild, {
 
     await Player.updatePlayerSessions(playerId, guild.serverId || undefined);
     await syncGuildCommands(guildId);
-    await this.updatePersistentMessage(guildId);
+    await this.updateOverview(guildId);
   },
   async untrackPlayer(guildId: string, playerId: string): Promise<any> {
     const player = await prisma.player.findUnique({
@@ -70,7 +70,7 @@ const Guild = Object.assign(prisma.guild, {
       .catch(() => undefined);
 
     await syncGuildCommands(guildId);
-    await this.updatePersistentMessage(guildId);
+    await this.updateOverview(guildId);
     return deleted;
   },
   async updateGuilds(client: Client) {
@@ -114,6 +114,7 @@ const Guild = Object.assign(prisma.guild, {
           player: {
             include: {
               sessions: true,
+              server: true,
             },
           },
         },
@@ -127,13 +128,21 @@ const Guild = Object.assign(prisma.guild, {
       })
       .then((guildPlayerTracks) =>
         guildPlayerTracks.map((track) =>
-          analyzePlayer(track.player, track.nickname, trackedServer)
+          analyzePlayer(
+            { ...track.player, server: track.player.server || undefined },
+            track.nickname,
+            trackedServer
+          )
         )
       );
 
     players.sort((a, b) => {
       if (a.isOnline !== b.isOnline) {
         return a.isOnline ? -1 : 1;
+      }
+
+      if (a.serverId !== b.serverId) {
+        return a.serverId ? -1 : 1;
       }
 
       return (
@@ -145,7 +154,7 @@ const Guild = Object.assign(prisma.guild, {
     return renderOverviewEmbeds(players, trackedServer);
   },
 
-  async updatePersistentMessage(guildId: string) {
+  async updateOverview(guildId: string) {
     const messages = await prisma.persistentMessage.findMany({
       where: {
         guildId,
@@ -170,11 +179,11 @@ const Guild = Object.assign(prisma.guild, {
     }
   },
 
-  async updateAllPersistentMessages() {
+  async updateAllOverviews() {
     const allGuilds = await prisma.guild.findMany({});
 
     for (const guild of allGuilds) {
-      await this.updatePersistentMessage(guild.id);
+      await this.updateOverview(guild.id);
     }
   },
 
@@ -199,7 +208,7 @@ const Guild = Object.assign(prisma.guild, {
     serverId?: string
   ): Promise<GuildModel | undefined> {
     if (!serverId) {
-      return await prisma.guild.update({
+      const update = await prisma.guild.update({
         where: {
           id: guildId,
         },
@@ -207,13 +216,16 @@ const Guild = Object.assign(prisma.guild, {
           serverId: null,
         },
       });
+
+      await this.updateOverview(guildId);
+      return update;
     }
 
     const server = await Server.getOrCreate(serverId);
 
     if (!server) return;
 
-    return await prisma.guild.update({
+    const update = await prisma.guild.update({
       where: {
         id: guildId,
       },
@@ -221,6 +233,10 @@ const Guild = Object.assign(prisma.guild, {
         serverId: server.id,
       },
     });
+
+    await this.updateOverview(guildId);
+
+    return update;
   },
 });
 
