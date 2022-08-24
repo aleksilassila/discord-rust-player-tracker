@@ -3,7 +3,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import Guild from "../models/Guild";
 import { messages } from "../messages";
 
-class Server implements SlashCommand {
+class ServerCommand implements SlashCommand {
   async data(guildId: string): Promise<any> {
     return new SlashCommandBuilder()
       .setName("server")
@@ -15,7 +15,7 @@ class Server implements SlashCommand {
           .addIntegerOption((option) =>
             option
               .setName("server-id")
-              .setDescription("Server Battlemetrics id.")
+              .setDescription("ServerCommand Battlemetrics id.")
               .setRequired(true)
           )
       )
@@ -44,12 +44,12 @@ class Server implements SlashCommand {
       return;
     }
 
-    if (!serverId) {
-      await interaction.reply("Server id is required.");
-      return;
-    }
-
     if (subcommand === "set") {
+      if (!serverId) {
+        await interaction.reply("ServerCommand id is required.");
+        return;
+      }
+
       await Guild.setTrackedServer(interaction.guild.id, serverId);
     } else if (subcommand === "unset") {
       await Guild.setTrackedServer(interaction.guild.id);
@@ -63,4 +63,4 @@ class Server implements SlashCommand {
   }
 }
 
-export default Server;
+export default ServerCommand;

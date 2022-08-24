@@ -12,15 +12,15 @@ import Player from "../../models/Player";
 import Guild from "../../models/Guild";
 import prisma from "../../prisma";
 import { messages } from "../../messages";
-import { executeRemove } from "./remove";
-import { executeInfo } from "./info";
-import { executeAdd } from "./add";
-import { executeStats } from "./stats";
-import { executeList } from "./list";
+import { executeRemove } from "./track-remove";
+import { executeInfo } from "./track-info";
+import { executeAdd } from "./track-add";
+import { executeList } from "./track-list";
+import executeOverview from "./track-overview";
 
-class Track implements SlashCommand {
+class TrackCommand implements SlashCommand {
   async data(guildId: string): Promise<any> {
-    const removeChoices = await prisma.guildPlayerTracks
+    const nicknameChoices = await prisma.guildPlayerTracks
       .findMany({
         where: {
           guildId,
@@ -35,7 +35,10 @@ class Track implements SlashCommand {
 
     return new SlashCommandBuilder()
       .setName("track")
-      .setDescription("Track a rust player based on their Battlemetrics id")
+      .setDescription(
+        "TrackCommand a rust player based on their Battlemetrics id"
+      )
+      .setDMPermission(false)
       .addSubcommand((command) =>
         command
           .setName("add")
@@ -46,12 +49,6 @@ class Track implements SlashCommand {
               .setDescription("Player Battlemetrics id")
               .setRequired(true)
           )
-          .addStringOption((option) =>
-            option
-              .setName("nickname")
-              .setDescription("Player nickname")
-              .setRequired(false)
-          )
       )
       .addSubcommand((command) =>
         command
@@ -61,7 +58,7 @@ class Track implements SlashCommand {
             option
               .setName("nickname")
               .setDescription("Player nickname")
-              .addChoices(...removeChoices)
+              .addChoices(...nicknameChoices)
           )
           .addNumberOption((option) =>
             option
@@ -77,7 +74,7 @@ class Track implements SlashCommand {
             option
               .setName("nickname")
               .setDescription("Player nickname")
-              .addChoices(...removeChoices)
+              .addChoices(...nicknameChoices)
           )
           .addNumberOption((option) =>
             option
@@ -90,53 +87,49 @@ class Track implements SlashCommand {
       )
       .addSubcommand((command) =>
         command
-          .setName("stats")
+          .setName("overview")
           .setDescription(
-            "Get a track stats report of tracked players that is kept up to date."
+            "Get an overview of all tracked players that is kept up to date."
           )
       );
   }
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const subcommand = interaction.options.getSubcommand();
+    const playerId =
+      interaction.options.getString("nickname") ||
+      interaction.options.getInteger("player-id")?.toString();
 
     if (!interaction.guild) {
       await interaction.reply("This command can only be used in a server.");
       return;
     }
 
-    if (subcommand === "list") {
-      return executeList(interaction, interaction.guild);
-    } else if (subcommand === "stats") {
-      return executeStats(interaction, interaction.guild);
+    if (!playerId && ["add", "remove", "info"].includes(subcommand)) {
+      await interaction.reply(messages.playerRequired);
+      return;
     }
 
-    if (subcommand === "add") {
-      const playerId = interaction.options.getInteger("player-id");
+    switch (subcommand) {
+      case "list":
+        return executeList(interaction, interaction.guild);
 
-      if (!playerId) {
-        await interaction.reply(messages.playerIdRequired);
-        return;
-      }
+      case "overview":
+        return executeOverview(interaction, interaction.guild);
 
-      return executeAdd(interaction, playerId.toString(), interaction.guild);
-    } else if (subcommand === "remove" || subcommand === "info") {
-      const playerId =
-        interaction.options.getString("nickname") ||
-        interaction.options.getInteger("player-id")?.toString();
+      case "add":
+        return executeAdd(interaction, <string>playerId, interaction.guild);
 
-      if (!playerId) {
-        await interaction.reply(messages.nicknameRequired);
-        return;
-      }
+      case "remove":
+        return executeRemove(interaction, <string>playerId, interaction.guild);
 
-      if (subcommand === "remove")
-        return executeRemove(interaction, playerId, interaction.guild);
-      else return executeInfo(interaction, playerId, interaction.guild);
-    } else {
-      await interaction.reply("Invalid subcommand");
+      case "info":
+        return executeInfo(interaction, <string>playerId, interaction.guild);
+
+      default:
+        await interaction.reply("Invalid subcommand");
     }
   }
 }
 
-export default Track;
+export default TrackCommand;

@@ -13,7 +13,7 @@ const cronCallback = async function () {
   await Guild.updateAllPersistentMessages(client);
 };
 
-const cronJob = new CronJob("*/1 * * * *", cronCallback, null);
+const cronJob = new CronJob("*/7 * * * *", cronCallback, null);
 
 client.once("ready", async () => {
   await syncAllGuildsCommands(client);

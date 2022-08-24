@@ -6,10 +6,12 @@ import {
   formatAsHours,
   getTimeBetweenDates,
 } from "./utils";
-import { getStatsEmbed } from "./embeds/stats-embed";
+import { getOverviewEmbed } from "./embeds/overview-embed";
 
 export const messages = {
   guildRequired: "This command can only be used in a server.",
+  playerRequired: "This command requires target player.",
+
   playerLink(name: string, id: string) {
     return hyperlink(bold(name), "https://www.battlemetrics.com/players/" + id);
   },
@@ -23,7 +25,7 @@ export const messages = {
       .map((player) => `> ${bold(player.name)} (${player.id})`)
       .join("\n")}`;
   },
-  trackStats(
+  overviewEmbed(
     players: TrackedPlayer[],
     trackedServer?: RustServer
   ): EmbedBuilder[] {
@@ -56,7 +58,7 @@ export const messages = {
 
     const embeds = [];
     for (let i = 0; i < pageCount; i++) {
-      embeds.push(getStatsEmbed(timedPlayers, i, pageCount, trackedServer));
+      embeds.push(getOverviewEmbed(timedPlayers, i, pageCount, trackedServer));
     }
 
     return embeds;

@@ -13,11 +13,23 @@ type TimedPlayer = TrackedPlayer & {
   time: ReturnType<typeof getTimeBetweenDates> | null;
 };
 
+const isOnline = (player: TimedPlayer, trackedServer?: RustServer) =>
+  player.serverId === trackedServer?.id || (!trackedServer && player.serverId);
+
+const sortByOnline = (players: TimedPlayer[], trackedServer?: RustServer) =>
+  players.slice().sort((a, b) => {
+    if (isOnline(a, trackedServer) !== isOnline(b, trackedServer)) {
+      return isOnline(a, trackedServer) ? -1 : 1;
+    }
+
+    return (a.time?.hours || 0) - (b.time?.hours || 0);
+  });
+
 const renderStatus = (p: TimedPlayer, trackedServer?: RustServer) =>
   `${
     !p.serverId
       ? `🔴 | ${p.nickname}`
-      : p.serverId === trackedServer?.id
+      : p.serverId === trackedServer?.id || (!trackedServer && p.serverId)
       ? `🟢 | ${p.nickname}`
       : `🟠 | ${p.nickname}`
   }`;
@@ -26,7 +38,7 @@ const renderPlaytime = (p: TimedPlayer, trackedServer?: RustServer) => {
   if (p.time) {
     const time =
       p.time.hours > 72 ? p.time.days + " days" : p.time.hours + " hours";
-    return p.serverId === trackedServer?.id
+    return (!trackedServer && p.serverId) || p.serverId === trackedServer?.id
       ? `for ${bold(time)}`
       : `${bold(time)} ago`;
   } else {
@@ -34,16 +46,20 @@ const renderPlaytime = (p: TimedPlayer, trackedServer?: RustServer) => {
   }
 };
 
-const renderOnlineOn = (player: TimedPlayer, trackedServer?: RustServer) => {
+const renderOnlineInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
   const playtime = renderPlaytime(player);
 
-  if (player.serverId === trackedServer?.id) {
-    return `Online on ${trackedServer?.name} ${playtime}.\n`;
-  } else if (player.serverId) {
+  if (isOnline(player, trackedServer)) {
+    return `Online ${
+      trackedServer ? `on ${trackedServer.name} ` : ""
+    }${playtime}.\n`;
+  } else if (player.serverId && trackedServer) {
     return `Currently online on other server. Last online on tracked server ${playtime}.\n`;
   }
 
-  return `Last online on tracked server ${playtime}.\n`;
+  return `Last online ${
+    trackedServer ? "on tracked server " : ""
+  }${playtime}.\n`;
 };
 
 const renderWipeInfo = (player: TimedPlayer, trackedServer?: RustServer) => {
@@ -86,7 +102,7 @@ const renderPlayerField = (player: TimedPlayer, trackedServer?: RustServer) => {
   return {
     name: renderStatus(player, trackedServer),
     value:
-      renderOnlineOn(player, trackedServer) +
+      renderOnlineInfo(player, trackedServer) +
       renderWipeInfo(player, trackedServer) +
       renderSleepData(player) +
       "\n" +
@@ -95,31 +111,17 @@ const renderPlayerField = (player: TimedPlayer, trackedServer?: RustServer) => {
   };
 };
 
-export const getStatsEmbed = (
+export const getOverviewEmbed = (
   timedPlayers: TimedPlayer[],
   pageNumber: number,
   pageCount: number,
   trackedServer?: RustServer
 ): EmbedBuilder => {
-  const builder = new EmbedBuilder().addFields(
-    ...timedPlayers
-      .sort((a, b) => {
-        if (
-          a.serverId === trackedServer?.id &&
-          b.serverId !== trackedServer?.id
-        ) {
-          return -1;
-        } else if (
-          a.serverId !== trackedServer?.id &&
-          b.serverId === trackedServer?.id
-        ) {
-          return 1;
-        }
-        return (a.time?.hours || 0) - (b.time?.hours || 0);
-      })
-      .slice(pageNumber * 10, pageNumber * 10 + 10)
-      .map((p) => renderPlayerField(p, trackedServer))
-  );
+  const playerFields = sortByOnline(timedPlayers, trackedServer)
+    .slice(pageNumber * 10, pageNumber * 10 + 10)
+    .map((p) => renderPlayerField(p, trackedServer));
+
+  const builder = new EmbedBuilder().addFields(...playerFields);
 
   if (pageNumber === 0) {
     if (trackedServer) {
@@ -133,11 +135,9 @@ export const getStatsEmbed = (
     builder
       .setTitle("Tracked Players")
       .setDescription(
-        `${
-          timedPlayers.filter((p) =>
-            trackedServer ? p.serverId === trackedServer?.id : !!p.serverId
-          ).length
-        }/${timedPlayers.length} of tracked players online:`
+        `${timedPlayers.filter((p) => isOnline(p, trackedServer)).length}/${
+          timedPlayers.length
+        } of tracked players online:`
       );
   }
 

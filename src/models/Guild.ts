@@ -121,12 +121,12 @@ const Guild = Object.assign(prisma.guild, {
       })
       .then((g) => g?.server || undefined);
 
-    return messages.trackStats(players, server);
+    return messages.overviewEmbed(players, server);
   },
 
   async updateAllPersistentMessages(client: Client) {
     await prisma.persistentMessage
-      .findMany({ where: { key: "stats" } })
+      .findMany({ where: { key: "overview" } })
       .then(async (messages) => {
         for (const message of messages) {
           const guild = client.guilds.cache.get(message.guildId);

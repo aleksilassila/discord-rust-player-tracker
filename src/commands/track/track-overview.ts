@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, Guild as DiscordGuild } from "discord.js";
 import prisma from "../../prisma";
 import Guild from "../../models/Guild";
 
-export const executeStats = async function (
+const executeOverview = async function (
   interaction: ChatInputCommandInteraction,
   guild: DiscordGuild
 ): Promise<void> {
@@ -27,7 +27,7 @@ export const executeStats = async function (
   await prisma.persistentMessage.deleteMany({
     where: {
       guildId: guild.id,
-      key: "stats",
+      key: "overview",
     },
   });
 
@@ -36,10 +36,12 @@ export const executeStats = async function (
       await prisma.persistentMessage.create({
         data: {
           id: replyId,
-          key: "stats",
+          key: "overview",
           pageIndex: index,
           guildId: guild.id,
         },
       })
   );
 };
+
+export default executeOverview;
