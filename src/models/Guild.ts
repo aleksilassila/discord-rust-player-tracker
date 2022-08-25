@@ -12,6 +12,7 @@ import Player, { analyzePlayer } from "./Player";
 import { syncGuildCommands } from "../deploy-commands";
 import { client } from "../app";
 import { renderOverviewEmbeds } from "../embeds/overview-embed";
+import PersistentMessage from "./PersistentMessage";
 
 export type GuildModel = PrismaGuild;
 
@@ -155,28 +156,26 @@ const Guild = Object.assign(prisma.guild, {
   },
 
   async updateOverview(guildId: string) {
-    const messages = await prisma.persistentMessage.findMany({
-      where: {
-        guildId,
-        key: "overview",
-      },
-    });
-
     const discordGuild = await client.guilds.fetch(guildId);
 
-    if (!messages || !discordGuild) return;
+    if (!discordGuild) return;
 
     const embeds = await this.getOverviewEmbeds(discordGuild);
+    const messages = await PersistentMessage.getMessages(
+      discordGuild,
+      "overview",
+      embeds.length
+    );
 
-    for (const message of messages) {
-      await this.getGuildMessage(discordGuild, message.id).then(
-        (discordMessage) => {
-          if (discordMessage) {
-            discordMessage.edit({ embeds: [embeds[message.pageIndex]] });
-          }
-        }
-      );
-    }
+    if (!messages) return;
+
+    messages.map(async (m, index) => {
+      try {
+        await m.edit({ embeds: [embeds[index]] });
+      } catch (e) {
+        console.error(e);
+      }
+    });
   },
 
   async updateAllOverviews() {
@@ -185,22 +184,6 @@ const Guild = Object.assign(prisma.guild, {
     for (const guild of allGuilds) {
       await this.updateOverview(guild.id);
     }
-  },
-
-  async getGuildMessage(
-    guild: DiscordGuild,
-    messageId: string
-  ): Promise<Message | undefined> {
-    for (const channel of Array.from(guild.channels.cache.values())) {
-      const textChannel = channel as TextChannel;
-      const message = await textChannel.messages
-        ?.fetch(messageId)
-        .catch(() => {});
-
-      if (message) return message;
-    }
-
-    return;
   },
 
   async setTrackedServer(

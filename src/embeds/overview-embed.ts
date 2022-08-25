@@ -46,15 +46,12 @@ const renderOnlineInfo = (
   }${playtime}.\n`;
 };
 
-const renderWipeInfo = (player: AnalyzedPlayer, trackedServer?: RustServer) => {
-  if (!trackedServer) return "";
+const renderWipeInfo = (player: AnalyzedPlayer) => {
+  if (!player.wipePlaytimeMs) return "";
 
-  const time = timePlayedSince(
-    player.sessions.filter((s) => s.serverId === trackedServer.id),
-    trackedServer.wipe
-  );
-
-  return `Playtime since wipe: ${bold(formatAsHours(time) + " hours")}\n`;
+  return `Playtime since wipe: ${bold(
+    formatAsHours(player.wipePlaytimeMs) + " hours"
+  )}\n`;
 };
 
 const renderSleepData = (player: AnalyzedPlayer) => {
@@ -90,7 +87,7 @@ const renderPlayerField = (
     name: renderStatus(player),
     value:
       renderOnlineInfo(player, trackedServer) +
-      renderWipeInfo(player, trackedServer) +
+      renderWipeInfo(player) +
       renderSleepData(player) +
       "\n" +
       messages.playerLink("Battlemetrics", player.id) +
@@ -99,6 +96,7 @@ const renderPlayerField = (
 };
 
 const renderDescription = (
+  allPlayers: AnalyzedPlayer[],
   players: AnalyzedPlayer[],
   trackedServer?: RustServer
 ) => {
@@ -107,27 +105,33 @@ const renderDescription = (
       .filter((p) => (trackedServer ? p.isOnline : !!p.server))
       .length.toString()
   );
-  const total = bold(players.length.toString());
+  const total = bold(allPlayers.length.toString());
 
-  return `${online}/${total} tracked players online\n`;
+  return (
+    `${online}/${total} tracked players online ` +
+    `(showing ${players.length}/${allPlayers.length})\n`
+  );
 };
 
 export const renderOverviewEmbeds = (
-  players: AnalyzedPlayer[],
+  _players: AnalyzedPlayer[],
   trackedServer?: RustServer
-) => {
-  if (!players.length)
-    return [new EmbedBuilder().setTitle("No players to report on.")];
+): EmbedBuilder[] => {
+  const players = _players.filter((p) => !trackedServer || !!p.wipePlaytimeMs);
 
-  const pageCount = Math.ceil(players.length / 10);
+  const pageCount = Math.max(1, Math.ceil(players.length / 10));
   const builders = [];
   for (let i = 0; i < pageCount; i++) {
-    builders.push(renderOverviewEmbed(players, i, pageCount, trackedServer));
+    builders.push(
+      renderOverviewEmbed(_players, players, i, pageCount, trackedServer)
+    );
   }
+
   return builders;
 };
 
 const renderOverviewEmbed = (
+  allPlayers: AnalyzedPlayer[],
   players: AnalyzedPlayer[],
   pageNumber: number,
   pageCount: number,
@@ -137,11 +141,15 @@ const renderOverviewEmbed = (
     .slice(pageNumber * 10, pageNumber * 10 + 10)
     .map((p) => renderPlayerField(p, trackedServer));
 
-  const builder = new EmbedBuilder().addFields(...playerFields);
+  const embed = new EmbedBuilder();
+
+  if (playerFields.length) {
+    embed.addFields(...playerFields);
+  }
 
   if (pageNumber === 0) {
     if (trackedServer) {
-      builder.setAuthor({
+      embed.setAuthor({
         name: "Tracking: " + trackedServer.name,
         url:
           "https://www.battlemetrics.com/servers/rust/" + trackedServer?.id ||
@@ -150,10 +158,10 @@ const renderOverviewEmbed = (
       });
     }
 
-    builder
+    embed
       .setTitle("Tracked Players")
       .setDescription(
-        renderDescription(players, trackedServer) +
+        renderDescription(allPlayers, players, trackedServer) +
           `${
             trackedServer?.mapUrl
               ? hyperlink(bold("View Server Map"), trackedServer?.mapUrl)
@@ -163,10 +171,10 @@ const renderOverviewEmbed = (
   }
 
   if (pageNumber + 1 === pageCount) {
-    builder.setFooter({
-      text: `Updated at ${new Date().toLocaleTimeString()}`,
+    embed.setFooter({
+      text: `Updated at ${new Date().toLocaleTimeString("fi-FI")}`,
     });
   }
 
-  return builder;
+  return embed;
 };

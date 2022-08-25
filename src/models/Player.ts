@@ -13,6 +13,7 @@ import {
   analyzeBedtimeSessions,
   BedtimeData,
   getTimeBetweenDates,
+  timePlayedSince,
 } from "../utils";
 
 export type PlayerModel = PrismaPlayer;
@@ -32,6 +33,7 @@ export type AnalyzedPlayer = PlayerModel & {
   onlineTimeMs?: number;
   isOnline: boolean;
   bedtimeData?: BedtimeData;
+  wipePlaytimeMs?: number;
 };
 
 const Player = Object.assign(prisma.player, {
@@ -167,6 +169,12 @@ export const analyzePlayer = function (
 
   const bedtimeData = analyzeBedtimeSessions(player.sessions);
   const lastSession = getLastSession(player.sessions);
+  const wipePlaytimeMs = trackedServer
+    ? timePlayedSince(
+        player.sessions.filter((s) => s.serverId === trackedServer.id),
+        trackedServer.wipe
+      )
+    : undefined;
 
   let offlineTimeMs,
     onlineTimeMs = undefined;
@@ -186,6 +194,7 @@ export const analyzePlayer = function (
     bedtimeData,
     offlineTimeMs,
     onlineTimeMs,
+    wipePlaytimeMs,
   };
 };
 
