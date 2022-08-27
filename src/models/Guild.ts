@@ -1,11 +1,5 @@
 import prisma from "../prisma";
-import {
-  Client,
-  EmbedBuilder,
-  Guild as DiscordGuild,
-  Message,
-  TextChannel,
-} from "discord.js";
+import { Client, EmbedBuilder, Guild as DiscordGuild } from "discord.js";
 import { Guild as PrismaGuild } from "@prisma/client";
 import Server from "./Server";
 import Player, { analyzePlayer } from "./Player";
@@ -16,211 +10,244 @@ import PersistentMessage from "./PersistentMessage";
 
 export type GuildModel = PrismaGuild;
 
-const Guild = Object.assign(prisma.guild, {
-  async trackPlayer(guildId: string, playerId: string, playerNickname: string) {
-    const player = await prisma.player.findUnique({
+const trackPlayer = async function (
+  guildId: string,
+  playerId: string,
+  playerNickname: string
+) {
+  const player = await prisma.player.findUnique({
+    where: {
+      id: playerId,
+    },
+    include: {
+      sessions: true,
+    },
+  });
+
+  const guild = await prisma.guild.findUnique({
+    where: {
+      id: guildId,
+    },
+  });
+
+  if (!player || !guild) return;
+
+  await prisma.guildPlayerTracks.create({
+    data: {
+      playerId,
+      guildId: guildId,
+      nickname: playerNickname,
+    },
+  });
+
+  await Player.updatePlayerSessions(player, guild.serverId || undefined);
+  await syncGuildCommands(guildId);
+  await updateOverview(guildId);
+};
+const untrackPlayer = async function (
+  guildId: string,
+  playerId: string
+): Promise<any> {
+  const player = await prisma.player.findUnique({
+    where: {
+      id: playerId,
+    },
+  });
+
+  const guild = await prisma.guild.findUnique({
+    where: {
+      id: guildId,
+    },
+  });
+
+  if (!player || !guild) return;
+
+  const deleted = prisma.guildPlayerTracks
+    .delete({
       where: {
-        id: playerId,
+        playerId_guildId: {
+          playerId,
+          guildId: guildId,
+        },
       },
-    });
+    })
+    .catch(() => undefined);
 
-    const guild = await prisma.guild.findUnique({
+  await syncGuildCommands(guildId);
+  await updateOverview(guildId);
+  return deleted;
+};
+const updateGuilds = async function (client: Client) {
+  const guilds = client.guilds.cache.map((guild) => guild);
+
+  // Delete removed guilds
+  await prisma.guild.deleteMany({
+    where: {
+      id: {
+        notIn: guilds.map((g) => g.id),
+      },
+    },
+  });
+
+  for (const guild of guilds) {
+    await prisma.guild.upsert({
       where: {
-        id: guildId,
+        id: guild.id,
+      },
+      update: {
+        name: guild.name,
+      },
+      create: {
+        id: guild.id,
+        name: guild.name,
       },
     });
+  }
 
-    if (!player || !guild) return;
+  console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
+};
 
-    await prisma.guildPlayerTracks.create({
-      data: {
-        playerId,
-        guildId: guildId,
-        nickname: playerNickname,
-      },
-    });
-
-    await Player.updatePlayerSessions(playerId, guild.serverId || undefined);
-    await syncGuildCommands(guildId);
-    await this.updateOverview(guildId);
-  },
-  async untrackPlayer(guildId: string, playerId: string): Promise<any> {
-    const player = await prisma.player.findUnique({
+const getOverviewEmbeds = async function (
+  guild: DiscordGuild
+): Promise<EmbedBuilder[]> {
+  const trackedServer = await prisma.rustServer
+    .findFirst({
       where: {
-        id: playerId,
-      },
-    });
-
-    const guild = await prisma.guild.findUnique({
-      where: {
-        id: guildId,
-      },
-    });
-
-    if (!player || !guild) return;
-
-    const deleted = prisma.guildPlayerTracks
-      .delete({
-        where: {
-          playerId_guildId: {
-            playerId,
-            guildId: guildId,
+        guilds: {
+          some: {
+            id: guild.id,
           },
         },
-      })
-      .catch(() => undefined);
+      },
+    })
+    .then((s) => s || undefined);
 
-    await syncGuildCommands(guildId);
-    await this.updateOverview(guildId);
-    return deleted;
-  },
-  async updateGuilds(client: Client) {
-    const guilds = client.guilds.cache.map((guild) => guild);
-    for (const guild of guilds) {
-      await prisma.guild.upsert({
-        where: {
-          id: guild.id,
-        },
-        update: {
-          name: guild.name,
-        },
-        create: {
-          id: guild.id,
-          name: guild.name,
-        },
-      });
-    }
-    console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
-  },
-
-  async getOverviewEmbeds(guild: DiscordGuild): Promise<EmbedBuilder[]> {
-    const trackedServer = await prisma.rustServer
-      .findFirst({
-        where: {
-          guilds: {
-            some: {
-              id: guild.id,
-            },
+  const players = await prisma.guildPlayerTracks
+    .findMany({
+      where: {
+        guildId: guild.id,
+      },
+      include: {
+        player: {
+          include: {
+            sessions: true,
+            server: true,
           },
         },
-      })
-      .then((s) => s || undefined);
-
-    const players = await prisma.guildPlayerTracks
-      .findMany({
-        where: {
-          guildId: guild.id,
-        },
-        include: {
+      },
+      orderBy: [
+        {
           player: {
-            include: {
-              sessions: true,
-              server: true,
-            },
+            name: "asc",
           },
         },
-        orderBy: [
-          {
-            player: {
-              name: "asc",
-            },
-          },
-        ],
-      })
-      .then((guildPlayerTracks) =>
-        guildPlayerTracks.map((track) =>
-          analyzePlayer(
-            { ...track.player, server: track.player.server || undefined },
-            track.nickname,
-            trackedServer
-          )
+      ],
+    })
+    .then((guildPlayerTracks) =>
+      guildPlayerTracks.map((track) =>
+        analyzePlayer(
+          { ...track.player, server: track.player.server || undefined },
+          track.nickname,
+          trackedServer
         )
-      );
-
-    players.sort((a, b) => {
-      if (a.isOnline !== b.isOnline) {
-        return a.isOnline ? -1 : 1;
-      }
-
-      if (a.serverId !== b.serverId) {
-        return a.serverId ? -1 : 1;
-      }
-
-      return (
-        (a.offlineTimeMs || a.onlineTimeMs || 0) -
-        (b.offlineTimeMs || b.onlineTimeMs || 0)
-      );
-    });
-
-    return renderOverviewEmbeds(players, trackedServer);
-  },
-
-  async updateOverview(guildId: string) {
-    const discordGuild = await client.guilds.fetch(guildId);
-
-    if (!discordGuild) return;
-
-    const embeds = await this.getOverviewEmbeds(discordGuild);
-    const messages = await PersistentMessage.getMessages(
-      discordGuild,
-      "overview",
-      embeds.length
+      )
     );
 
-    if (!messages) return;
-
-    messages.map(async (m, index) => {
-      try {
-        await m.edit({ embeds: [embeds[index]] });
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  },
-
-  async updateAllOverviews() {
-    const allGuilds = await prisma.guild.findMany({});
-
-    for (const guild of allGuilds) {
-      await this.updateOverview(guild.id);
-    }
-  },
-
-  async setTrackedServer(
-    guildId: string,
-    serverId?: string
-  ): Promise<GuildModel | undefined> {
-    if (!serverId) {
-      const update = await prisma.guild.update({
-        where: {
-          id: guildId,
-        },
-        data: {
-          serverId: null,
-        },
-      });
-
-      await this.updateOverview(guildId);
-      return update;
+  players.sort((a, b) => {
+    if (a.isOnline !== b.isOnline) {
+      return a.isOnline ? -1 : 1;
     }
 
-    const server = await Server.getOrCreate(serverId);
+    if (a.serverId !== b.serverId) {
+      return a.serverId ? -1 : 1;
+    }
 
-    if (!server) return;
+    return (
+      (a.offlineTimeMs || a.onlineTimeMs || 0) -
+      (b.offlineTimeMs || b.onlineTimeMs || 0)
+    );
+  });
 
-    const update = await prisma.guild.update({
-      where: {
-        id: guildId,
+  return renderOverviewEmbeds(players, trackedServer);
+};
+
+const updateOverview = async function (guildId: string) {
+  const discordGuild = await client.guilds.fetch(guildId);
+
+  if (!discordGuild) return;
+
+  const embeds = await getOverviewEmbeds(discordGuild);
+  const messages = await PersistentMessage.getMessages(
+    discordGuild,
+    "overview",
+    embeds.length
+  );
+
+  if (!messages) return;
+
+  messages.map(async (m, index) => {
+    try {
+      await m.edit({ content: "", embeds: [embeds[index]] });
+    } catch (e) {
+      console.error(e);
+    }
+  });
+};
+
+const updateAllOverviews = async function () {
+  const allGuilds = await prisma.guild.findMany({});
+  console.log(
+    "Updating overviews for" + allGuilds.map((g) => g.name).join(", ")
+  );
+
+  for (const guild of allGuilds) {
+    await updateOverview(guild.id);
+  }
+
+  console.log("Overviews updated.");
+};
+
+const unsetTrackedServer = async function (guildId: string) {
+  await prisma.guild.update({
+    where: {
+      id: guildId,
+    },
+    data: {
+      server: {
+        disconnect: true,
       },
-      data: {
-        serverId: server.id,
-      },
-    });
+    },
+  });
+};
 
-    await this.updateOverview(guildId);
+const setTrackedServer = async function (
+  guildId: string,
+  serverId?: string
+): Promise<GuildModel | undefined> {
+  const server = serverId ? await Server.updateOrCreate(serverId) : undefined;
 
-    return update;
-  },
-});
+  if (serverId && !server) return;
 
-export default Guild;
+  const update = await prisma.guild.update({
+    where: {
+      id: guildId,
+    },
+    data: {
+      serverId: server?.id,
+    },
+  });
+
+  await updateOverview(guildId);
+  return update;
+};
+
+export default {
+  updateOverview,
+  updateAllOverviews,
+  trackPlayer,
+  untrackPlayer,
+  updateGuilds,
+  setTrackedServer,
+  unsetTrackedServer,
+  getOverviewEmbeds,
+};

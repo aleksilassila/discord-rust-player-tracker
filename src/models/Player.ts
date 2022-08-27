@@ -1,34 +1,40 @@
 import {
   Player as PrismaPlayer,
-  PlaySession,
+  PlaySession as Session,
+  Prisma,
   RustServer,
 } from "@prisma/client";
 
 import prisma from "../prisma";
 import { PlayerInfo } from "../apis/battemetrics/get-player-info";
-import { getSessions } from "../apis/battemetrics";
 import Notifications from "./Notifications";
-import Server from "./Server";
 import {
   analyzeBedtimeSessions,
   BedtimeData,
   getTimeBetweenDates,
+  isOlderThan,
   timePlayedSince,
+  uniqueArray,
 } from "../utils";
+import Battlemetrics from "../apis/Battlemetrics";
+import { SESSIONS_REFRESH_TIME } from "../config";
+import Server from "./Server";
+import PlaySession from "./PlaySession";
 
 export type PlayerModel = PrismaPlayer;
 
-export type AnalyzedSession = PlaySession & {};
+export type AnalyzedSession = Session & {};
 
-export type PlayerWithRelations = PlayerModel & {
-  sessions: PlaySession[];
-  server?: RustServer;
-};
+export type PlayerWithRelations = Prisma.PlayerGetPayload<{
+  include: {
+    sessions: true;
+    server: true;
+  };
+}>;
 
-export type AnalyzedPlayer = PlayerModel & {
+export type AnalyzedPlayer = PlayerWithRelations & {
   nickname: string;
   sessions: AnalyzedSession[];
-  server?: RustServer;
   offlineTimeMs?: number;
   onlineTimeMs?: number;
   isOnline: boolean;
@@ -36,120 +42,129 @@ export type AnalyzedPlayer = PlayerModel & {
   wipePlaytimeMs?: number;
 };
 
-const Player = Object.assign(prisma.player, {
-  async createMissingPlayer(playerInfo: PlayerInfo) {
-    return prisma.player.upsert({
+const Player: any = {};
+
+Player.createMissingPlayer = async function (playerInfo: PlayerInfo) {
+  return prisma.player
+    .upsert({
       where: {
         id: playerInfo.id,
       },
       update: {},
       create: {
-        id: playerInfo.id,
-        name: playerInfo.attributes.name,
+        id: <any>playerInfo?.id,
+        name: <any>playerInfo?.attributes?.name,
       },
-    });
-  },
-  async updatePlayerSessions(playerId: string, serverId?: string) {
-    const player = await prisma.player.findUnique({
+    })
+    .catch(console.error);
+};
+
+Player.updatePlayerSessions = async function (
+  player: Prisma.PlayerGetPayload<{ include: { sessions: true } }>,
+  serverId?: string,
+  force: boolean = false
+) {
+  if (!force && isOlderThan(player.sessionsUpdatedAt, SESSIONS_REFRESH_TIME))
+    return;
+
+  console.log("Fetching remote sessions for", player.name);
+
+  const remoteSessions = await Battlemetrics.getSessions(
+    player.id,
+    serverId ? [serverId] : undefined
+  );
+
+  if (!remoteSessions) {
+    console.error("No remote sessions for", player.name);
+    return;
+  }
+
+  const serverIds = uniqueArray(
+    remoteSessions.map((s) => s.relationships?.server?.data?.id)
+  ).filter((s): s is string => !!s);
+
+  const rustServerIds: string[] = [];
+
+  for (const serverId of serverIds) {
+    const server = await Server.updateOrCreate(serverId);
+    if (server) rustServerIds.push(server.id);
+  }
+
+  for (const remoteSession of remoteSessions) {
+    const serverExists = rustServerIds.includes(
+      remoteSession.relationships?.server?.data?.id || ""
+    );
+
+    serverExists &&
+      (await PlaySession.createPlaySession(remoteSession, player.id));
+  }
+
+  await prisma.player.update({
+    where: { id: player.id },
+    data: {
+      sessionsUpdatedAt: new Date(),
+    },
+  });
+
+  await Player.updatePlayerServer(player);
+};
+
+Player.updateAllSessions = async function () {
+  console.log("Updating all sessions...");
+
+  const players = await prisma.player.findMany({
+    include: {
+      sessions: true,
+      guilds: {
+        include: {
+          guild: true,
+        },
+      },
+    },
+  });
+
+  for (const player of players) {
+    const uniqueServerIds = Array.from(
+      new Set(player.guilds.map((g) => g.guild.serverId))
+    );
+
+    for (const serverId of uniqueServerIds) {
+      await Player.updatePlayerSessions(player, serverId || undefined);
+    }
+  }
+
+  console.log("All sessions updated.");
+};
+Player.updatePlayerServer = async function (player: PrismaPlayer) {
+  const lastSession = await prisma.playSession.findFirst({
+    where: {
+      playerId: player.id,
+    },
+    orderBy: {
+      start: "desc",
+    },
+  });
+
+  if (lastSession) {
+    const updatedPlayer = await prisma.player.update({
       where: {
-        id: playerId,
+        id: player.id,
       },
-      include: {
-        sessions: true,
-      },
-    });
-
-    if (!player) return;
-
-    const remoteSessions = await getSessions(
-      player.id,
-      serverId ? [serverId] : undefined
-    ).catch(console.error);
-    if (!remoteSessions) return;
-
-    for (const remoteSession of remoteSessions) {
-      const server = await Server.getOrCreate(
-        remoteSession.relationships.server.data.id
-      );
-
-      if (!server) continue;
-
-      await prisma.playSession.upsert({
-        where: {
-          id: remoteSession.id,
-        },
-        update: {
-          stop: remoteSession.attributes.stop,
-        },
-        create: {
-          id: remoteSession.id,
-          start: remoteSession.attributes.start,
-          stop: remoteSession.attributes.stop,
-          playerId: playerId,
-          serverId: server.id,
-        },
-      });
-    }
-
-    await this.updatePlayerServer(playerId);
-  },
-
-  async updateAllSessions() {
-    const players = await prisma.player.findMany({
-      include: {
-        guilds: {
-          include: {
-            guild: true,
-          },
-        },
+      data: {
+        serverId: lastSession.stop ? null : lastSession.serverId,
       },
     });
 
-    for (const player of players) {
-      const uniqueServerIds = Array.from(
-        new Set(player.guilds.map((g) => g.guild.serverId))
-      );
-
-      for (const serverId of uniqueServerIds) {
-        await this.updatePlayerSessions(player.id, serverId || undefined);
-      }
+    if (updatedPlayer && player.serverId !== updatedPlayer.serverId) {
+      await Notifications.sendNotifications(updatedPlayer);
     }
-  },
-  async updatePlayerServer(playerId: string) {
-    const lastSession = await prisma.playSession.findFirst({
-      where: {
-        playerId,
-      },
-      orderBy: {
-        start: "desc",
-      },
-    });
-
-    if (lastSession) {
-      const oldPlayer = await prisma.player.findUnique({
-        where: { id: playerId },
-      });
-
-      const newPlayer = await prisma.player.update({
-        where: {
-          id: playerId,
-        },
-        data: {
-          serverId: lastSession.stop ? null : lastSession.serverId,
-        },
-      });
-
-      if (oldPlayer && newPlayer && oldPlayer.serverId !== newPlayer.serverId) {
-        await Notifications.sendNotifications(newPlayer);
-      }
-    }
-  },
-});
+  }
+};
 
 export const getLastSession = function (
-  sessions: PlaySession[],
+  sessions: Session[],
   serverId?: string
-): PlaySession | null {
+): Session | null {
   const sorted = sessions
     .filter((s) => !serverId || s.serverId === serverId)
     .sort((a, b) => b.start.getTime() - a.start.getTime());

@@ -9,29 +9,34 @@ import Guild from "./models/Guild";
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const cronCallback = async function () {
-  await Player.updateAllSessions();
-  await Guild.updateAllOverviews();
+  try {
+    await Player.updateAllSessions();
+    await Guild.updateAllOverviews();
+  } catch (err) {
+    console.error("Error executing cron", err);
+  }
 };
 
-const cronJob = new CronJob("*/7 * * * *", cronCallback, null);
+const cronJob = new CronJob("*/1 * * * *", cronCallback, null);
 
 client.once("ready", async () => {
   await syncAllGuildsCommands(client);
   await Guild.updateGuilds(client);
   cronCallback().then(function () {
     cronJob.start();
+    console.log("Cron started, everything ready.");
   });
 });
 
-client.on("guildCreate", async (guild) => {
+client.on("guildCreate", async () => {
   await Guild.updateGuilds(client);
 });
 
-client.on("guildDelete", async (guild) => {
+client.on("guildDelete", async () => {
   await Guild.updateGuilds(client);
 });
 
-client.on("guildUpdate", async (guild) => {
+client.on("guildUpdate", async () => {
   await Guild.updateGuilds(client);
 });
 
@@ -41,4 +46,4 @@ client.on("interactionCreate", async (interaction) => {
   await execute(interaction);
 });
 
-client.login(DISCORD_TOKEN);
+client.login(DISCORD_TOKEN).then();

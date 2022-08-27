@@ -52,7 +52,7 @@ class ServerCommand implements SlashCommand {
 
       await Guild.setTrackedServer(interaction.guild.id, serverId);
     } else if (subcommand === "unset") {
-      await Guild.setTrackedServer(interaction.guild.id);
+      await Guild.unsetTrackedServer(interaction.guild.id);
     }
 
     await interaction.reply(

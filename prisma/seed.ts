@@ -22,6 +22,10 @@ async function main() {
     { id: "473315224", name: "ValtsU" },
     { id: "444250942", name: "Lester-_-#RustClash" },
     { id: "895084784", name: "slapnut" },
+    { id: "1104521873", name: "Battery paranoid.gg" },
+    { id: "78609924", name: "M1niBonD paranoid.gg" },
+    { id: "191172820", name: "300eAthletes" },
+    { id: "906804099", name: "THEDUKEOFNUKE" },
   ];
 
   for (const player of playersToAdd) {

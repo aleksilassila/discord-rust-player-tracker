@@ -24,14 +24,16 @@ export async function execute(interaction: CommandInteraction) {
         await command.execute(interaction);
       } catch (error) {
         console.error(error);
-        await interaction.reply({
-          content: "There was an error while executing this command!",
-          ephemeral: true,
-        });
+        await interaction
+          .reply({
+            content: "There was an error while executing this command!",
+            ephemeral: true,
+          })
+          .catch(console.error);
       }
       return;
     }
   }
 
-  await interaction.reply("Command not found.");
+  await interaction.reply("Command not found.").catch(console.error);
 }

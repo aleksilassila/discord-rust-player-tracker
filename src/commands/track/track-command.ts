@@ -1,15 +1,5 @@
 import { SlashCommand } from "../slash-command";
-import {
-  ChatInputCommandInteraction,
-  Guild as DiscordGuild,
-  SlashCommandBuilder,
-} from "discord.js";
-import {
-  getPlayerInfo,
-  PlayerInfo,
-} from "../../apis/battemetrics/get-player-info";
-import Player from "../../models/Player";
-import Guild from "../../models/Guild";
+import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import prisma from "../../prisma";
 import { messages } from "../../messages";
 import { executeRemove } from "./track-remove";

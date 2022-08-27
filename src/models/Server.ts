@@ -1,50 +1,85 @@
 import prisma from "../prisma";
 import { RustServer as ServerModel } from "@prisma/client";
 import { getServerInfo } from "../apis/battemetrics/get-server-info";
+import { isOlderThan } from "../utils";
+import { SERVER_REFRESH_TIME } from "../config";
 
 // Store ids to not fetch non rust servers twice
 const nonRustServerIds: string[] = [];
 
-const Server = Object.assign(prisma.rustServer, {
-  async getOrCreate(serverId: string): Promise<ServerModel | undefined> {
-    const server = await prisma.rustServer.findUnique({
-      where: {
-        id: serverId,
-      },
-    });
+const updateOrCreate = async function (
+  serverId: string
+): Promise<ServerModel | undefined> {
+  const staleServer = await prisma.rustServer.findUnique({
+    where: {
+      id: serverId,
+    },
+  });
 
-    if (!server) {
-      if (nonRustServerIds.includes(serverId)) return;
+  if (staleServer && !isOlderThan(staleServer.updatedAt, SERVER_REFRESH_TIME)) {
+    return staleServer;
+  }
 
-      const serverInfo = await getServerInfo(serverId).catch(
-        (err) => undefined
-      );
+  const serverInfo = await getServerInfo(serverId);
 
-      if (!serverInfo || serverInfo.relationships.game.data.id !== "rust") {
-        if (serverInfo) nonRustServerIds.push(serverId);
-        console.log(
-          "Could not fetch rust server",
-          !serverInfo ? "Error" : "Not a rust server"
-        );
-        return;
-      }
+  if (!serverInfo) {
+    console.error("Could not fetch rust server.");
+    return;
+  }
 
-      return prisma.rustServer
-        .create({
-          data: {
-            id: serverInfo.id,
-            name: serverInfo.attributes.name,
-            wipe: serverInfo.attributes.details.rust_last_wipe,
-            mapUrl: serverInfo.attributes.details.rust_maps?.url,
-            mapPreview: serverInfo.attributes.details.rust_maps?.thumbnailUrl,
-          },
-        })
-        .catch((err) => undefined)
-        .finally(() => console.log("Created new server", serverInfo.id));
+  if (serverInfo?.relationships?.game?.data?.id !== "rust") {
+    nonRustServerIds.push(serverId);
+
+    // console.log(`Skipping ${serverInfo?.relationships?.game?.data?.id} server`);
+    return;
+  }
+
+  if (!staleServer) {
+    if (nonRustServerIds.includes(serverId)) return;
+
+    const newServer = await prisma.rustServer
+      .create({
+        data: {
+          id: <string>serverInfo?.id,
+          name: <string>serverInfo?.attributes?.name,
+          wipe: <string>serverInfo?.attributes?.details?.rust_last_wipe,
+          mapUrl: serverInfo?.attributes?.details?.rust_maps?.url,
+          mapPreview: serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
+        },
+      })
+      .catch((err) => {
+        console.error("Could not create new server", err);
+      });
+
+    if (newServer) {
+      // console.log("Created new server", serverInfo.id);
     }
 
-    return server;
-  },
-});
+    return newServer || undefined;
+  } else {
+    const updatedServer = await prisma.rustServer
+      .update({
+        where: {
+          id: serverId,
+        },
+        data: {
+          id: <any>serverInfo?.id,
+          name: <any>serverInfo?.attributes?.name,
+          wipe: <any>serverInfo?.attributes?.details?.rust_last_wipe,
+          mapUrl: serverInfo?.attributes?.details?.rust_maps?.url,
+          mapPreview: serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
+        },
+      })
+      .catch(console.error);
 
-export default Server;
+    if (updatedServer) {
+      console.log("Updated server", updatedServer.id);
+    }
+
+    return updatedServer || undefined;
+  }
+};
+
+export default {
+  updateOrCreate,
+};

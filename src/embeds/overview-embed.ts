@@ -109,7 +109,13 @@ const renderDescription = (
 
   return (
     `${online}/${total} tracked players online ` +
-    `(showing ${players.length}/${allPlayers.length})\n`
+    `(showing ${players.length}/${allPlayers.length})\n` +
+    `${
+      trackedServer?.mapUrl
+        ? hyperlink(bold("View Server Map"), trackedServer?.mapUrl)
+        : ""
+    }\n` +
+    `${trackedServer ? hyperlink("Connect", "steam://connect/") : ""}`
   );
 };
 
@@ -160,14 +166,7 @@ const renderOverviewEmbed = (
 
     embed
       .setTitle("Tracked Players")
-      .setDescription(
-        renderDescription(allPlayers, players, trackedServer) +
-          `${
-            trackedServer?.mapUrl
-              ? hyperlink(bold("View Server Map"), trackedServer?.mapUrl)
-              : ""
-          }\n`
-      );
+      .setDescription(renderDescription(allPlayers, players, trackedServer));
   }
 
   if (pageNumber + 1 === pageCount) {

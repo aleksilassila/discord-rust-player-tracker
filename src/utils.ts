@@ -20,7 +20,10 @@ export const formatAsTime = (timeFromMidnight: number): string => {
 };
 
 export const getTimeBetweenDates = (date1: Date, date2: Date): number =>
-  date1.getTime() - date2.getTime();
+  Math.abs(date1.getTime() - date2.getTime());
+
+export const isOlderThan = (date: Date, milliseconds: number): boolean =>
+  getTimeBetweenDates(new Date(), date) > milliseconds;
 
 export const timePlayedSince = (sessions: PlaySession[], date: Date) => {
   let time = 0;
@@ -160,4 +163,8 @@ export const analyzeBedtimeSessions = (
     averageSleepTimeInHrs: Math.round(averageSleepTime * 10) / 10,
     minSleepTimeInHrs: Math.round(minSleepTime * 10) / 10,
   };
+};
+
+export const uniqueArray = <T>(arr: T[]): T[] => {
+  return Array.from(new Set(arr));
 };

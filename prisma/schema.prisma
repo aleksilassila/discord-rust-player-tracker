@@ -16,6 +16,7 @@ model Player {
 
   server   RustServer?     @relation(fields: [serverId], references: [id])
   serverId String?
+  sessionsUpdatedAt DateTime @default(now())
 
   sessions PlaySession[]
   guilds   GuildPlayerTracks[]
@@ -83,6 +84,7 @@ model RustServer {
   wipe     DateTime
   mapUrl   String?
   mapPreview String?
+  updatedAt DateTime @updatedAt
 
   players  Player[]
   sessions PlaySession[]

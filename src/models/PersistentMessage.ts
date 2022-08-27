@@ -17,32 +17,33 @@ async function createMessages(
     return [undefined, undefined];
   }
 
-  const messages = (
-    await Promise.all(
-      new Array(messageCount)
-        .fill(undefined)
-        .map(async () => await channel.send("Loading...").catch(console.error))
-    )
-  ).filter((m): m is Message => !!m);
+  const messages: Message[] = [];
+
+  for (let i = 0; i < messageCount; i++) {
+    const message = await channel.send("Loading...").catch(console.error);
+    if (message) messages.push(message);
+  }
 
   if (messages.length !== messageCount) {
     console.error("Message count did not match.");
   }
 
-  const persistentMessages = await Promise.all(
-    messages.map((m, i) =>
-      prisma.persistentMessage.create({
+  const persistentMessages: PersistentMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const persistentMessage = await prisma.persistentMessage
+      .create({
         data: {
-          id: m.id,
+          id: messages[i].id,
           pageIndex: i,
           key: messageKey,
           guildId: guild.id,
         },
       })
-    )
-  );
+      .catch(console.error);
+    if (persistentMessage) persistentMessages.push(persistentMessage);
+  }
 
-  return [await persistentMessages, await messages];
+  return [persistentMessages, messages];
 }
 
 async function fetchMessage(
@@ -89,9 +90,12 @@ async function getMessages(
     },
   });
 
-  const existingMessages = await Promise.all(
-    existingLocalMessages.map((m) => fetchMessage(guild, m.id))
-  );
+  const existingMessages: Message[] = [];
+
+  for (const localMessage of existingLocalMessages) {
+    const message = await fetchMessage(guild, localMessage.id);
+    if (message) existingMessages.push(message);
+  }
 
   // If first message has been deleted, don't update.
   if (existingMessages.length && !existingMessages[0]) return;
