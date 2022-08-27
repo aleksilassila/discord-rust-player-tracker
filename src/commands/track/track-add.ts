@@ -1,8 +1,5 @@
 import { ChatInputCommandInteraction, Guild as DiscordGuild } from "discord.js";
-import {
-  getPlayerInfo,
-  PlayerInfo,
-} from "../../apis/battemetrics/get-player-info";
+import { PlayerInfo } from "../../apis/battemetrics/get-player-info";
 import Guild from "../../models/Guild";
 import Player from "../../models/Player";
 import { messages } from "../../messages";
@@ -13,12 +10,14 @@ export const executeAdd = async function (
   playerId: string,
   guild: DiscordGuild
 ): Promise<void> {
+  await interaction.deferReply().catch(console.error);
+
   const playerInfo: PlayerInfo | void = await Battlemetrics.getPlayerInfo(
     playerId
   ).catch(console.error);
 
   if (!playerInfo) {
-    await interaction.reply("Could not fetch the player");
+    await interaction.editReply("Could not fetch the player");
     return;
   }
 
@@ -27,7 +26,7 @@ export const executeAdd = async function (
   const playerName = playerInfo?.attributes?.name;
 
   if (!playerNickname || !playerName) {
-    await interaction.reply("Error adding player");
+    await interaction.editReply("Error adding player");
     return;
   }
 
@@ -35,13 +34,15 @@ export const executeAdd = async function (
     .then(async () => {
       await Guild.trackPlayer(guild.id, playerId, playerNickname);
       await interaction
-        .reply({
+        .editReply({
           content: messages.trackPlayer(playerName, playerId, playerNickname),
         })
         .catch(console.error);
     })
     .catch(async (err: any) => {
-      await interaction.reply("Error adding player").catch(console.error);
+      await interaction
+        .editReply("Could not add the player. Already did?")
+        .catch(console.error);
       console.error(err);
     });
 };

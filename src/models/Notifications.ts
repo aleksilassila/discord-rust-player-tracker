@@ -2,7 +2,7 @@ import prisma from "../prisma";
 import { PlayerModel } from "./Player";
 import { client } from "../app";
 
-const Notifications = Object.assign(prisma.guildUserNotifications, {
+const Notifications = {
   async enableNotifications(userId: string, guildId: string) {
     return prisma.user
       .upsert({
@@ -80,6 +80,6 @@ const Notifications = Object.assign(prisma.guildUserNotifications, {
       );
     }
   },
-});
+};
 
 export default Notifications;
