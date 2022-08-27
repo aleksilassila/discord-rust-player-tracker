@@ -4,10 +4,16 @@ import {
   formatAsHours,
   timePlayedSince,
 } from "../utils";
-import { bold, EmbedBuilder, hyperlink } from "discord.js";
+import {
+  bold,
+  EmbedBuilder,
+  hyperlink,
+  Guild as DiscordGuild,
+} from "discord.js";
 import { RustServer } from "@prisma/client";
 import { messages } from "../messages";
-import { AnalyzedPlayer } from "../models/Player";
+import Player, { AnalyzedPlayer } from "../models/Player";
+import prisma from "../prisma";
 
 const renderStatus = (p: AnalyzedPlayer) =>
   `${p.isOnline ? "🟢" : !!p.server ? "🟠" : "🔴"} | ${p.nickname} (${p.id})`;
@@ -119,7 +125,7 @@ const renderDescription = (
   );
 };
 
-export const renderOverviewEmbeds = (
+const renderOverviewEmbeds = (
   _players: AnalyzedPlayer[],
   trackedServer?: RustServer
 ): EmbedBuilder[] => {
@@ -176,4 +182,68 @@ const renderOverviewEmbed = (
   }
 
   return embed;
+};
+
+export const getOverviewEmbeds = async function (
+  guild: DiscordGuild
+): Promise<EmbedBuilder[]> {
+  const trackedServer = await prisma.rustServer
+    .findFirst({
+      where: {
+        guilds: {
+          some: {
+            id: guild.id,
+          },
+        },
+      },
+    })
+    .then((s) => s || undefined);
+
+  const players = await prisma.guildPlayerTracks
+    .findMany({
+      where: {
+        guildId: guild.id,
+      },
+      include: {
+        player: {
+          include: {
+            sessions: true,
+            server: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          player: {
+            name: "asc",
+          },
+        },
+      ],
+    })
+    .then((guildPlayerTracks) =>
+      guildPlayerTracks.map((track) =>
+        Player.analyzePlayer(
+          { ...track.player, server: track.player.server },
+          track.nickname,
+          trackedServer
+        )
+      )
+    );
+
+  players.sort((a, b) => {
+    if (a.isOnline !== b.isOnline) {
+      return a.isOnline ? -1 : 1;
+    }
+
+    if (a.serverId !== b.serverId) {
+      return a.serverId ? -1 : 1;
+    }
+
+    return (
+      (a.offlineTimeMs || a.onlineTimeMs || 0) -
+      (b.offlineTimeMs || b.onlineTimeMs || 0)
+    );
+  });
+
+  return renderOverviewEmbeds(players, trackedServer);
 };

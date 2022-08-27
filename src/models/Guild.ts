@@ -1,13 +1,13 @@
 import prisma from "../prisma";
-import { Client, EmbedBuilder, Guild as DiscordGuild } from "discord.js";
+import { Client } from "discord.js";
 import { Guild as PrismaGuild } from "@prisma/client";
 import Server from "./Server";
-import Player, { analyzePlayer } from "./Player";
+import Player from "./Player";
 import { syncGuildCommands } from "../deploy-commands";
 import { client } from "../app";
-import { renderOverviewEmbeds } from "../embeds/overview-embed";
 import PersistentMessage from "./PersistentMessage";
 import TaskQueue from "../task-queue";
+import { getOverviewEmbeds } from "../embeds/overview-embed";
 
 export type GuildModel = PrismaGuild;
 
@@ -111,77 +111,13 @@ const Guild = {
     console.log(`Guilds: ${guilds.map((g) => g.name).join(", ")}`);
   },
 
-  getOverviewEmbeds: async function (
-    guild: DiscordGuild
-  ): Promise<EmbedBuilder[]> {
-    const trackedServer = await prisma.rustServer
-      .findFirst({
-        where: {
-          guilds: {
-            some: {
-              id: guild.id,
-            },
-          },
-        },
-      })
-      .then((s) => s || undefined);
-
-    const players = await prisma.guildPlayerTracks
-      .findMany({
-        where: {
-          guildId: guild.id,
-        },
-        include: {
-          player: {
-            include: {
-              sessions: true,
-              server: true,
-            },
-          },
-        },
-        orderBy: [
-          {
-            player: {
-              name: "asc",
-            },
-          },
-        ],
-      })
-      .then((guildPlayerTracks) =>
-        guildPlayerTracks.map((track) =>
-          analyzePlayer(
-            { ...track.player, server: track.player.server },
-            track.nickname,
-            trackedServer
-          )
-        )
-      );
-
-    players.sort((a, b) => {
-      if (a.isOnline !== b.isOnline) {
-        return a.isOnline ? -1 : 1;
-      }
-
-      if (a.serverId !== b.serverId) {
-        return a.serverId ? -1 : 1;
-      }
-
-      return (
-        (a.offlineTimeMs || a.onlineTimeMs || 0) -
-        (b.offlineTimeMs || b.onlineTimeMs || 0)
-      );
-    });
-
-    return renderOverviewEmbeds(players, trackedServer);
-  },
-
   updateOverview: (guildId: string) => {
     TaskQueue.addTask(async () => {
       const discordGuild = await client.guilds.fetch(guildId);
 
       if (!discordGuild) return;
 
-      const embeds = await Guild.getOverviewEmbeds(discordGuild);
+      const embeds = await getOverviewEmbeds(discordGuild);
       const messages = await PersistentMessage.getMessages(
         discordGuild,
         "overview",

@@ -1,12 +1,12 @@
 import { ChatInputCommandInteraction, Guild as DiscordGuild } from "discord.js";
 import prisma from "../../prisma";
-import Guild from "../../models/Guild";
+import { getOverviewEmbeds } from "../../embeds/overview-embed";
 
 const executeOverview = async function (
   interaction: ChatInputCommandInteraction,
   guild: DiscordGuild
 ): Promise<void> {
-  const embeds = await Guild.getOverviewEmbeds(guild);
+  const embeds = await getOverviewEmbeds(guild);
   const replyIds = [
     await interaction
       .reply({ embeds: [embeds[0]] })

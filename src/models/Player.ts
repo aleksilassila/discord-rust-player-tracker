@@ -168,6 +168,46 @@ const Player = {
       }
     }
   },
+
+  analyzePlayer: function (
+    player: PlayerWithRelations,
+    nickname: string,
+    trackedServer?: RustServer
+  ): AnalyzedPlayer {
+    const isOnline = trackedServer
+      ? player.serverId === trackedServer.id
+      : !!player.serverId;
+
+    const bedtimeData = analyzeBedtimeSessions(player.sessions);
+    const lastSession = getLastSession(player.sessions);
+    const wipePlaytimeMs = trackedServer
+      ? timePlayedSince(
+          player.sessions.filter((s) => s.serverId === trackedServer.id),
+          trackedServer.wipe
+        )
+      : undefined;
+
+    let offlineTimeMs,
+      onlineTimeMs = undefined;
+
+    if (lastSession) {
+      if (!isOnline && !!lastSession.stop) {
+        offlineTimeMs = getTimeBetweenDates(new Date(), lastSession.stop);
+      } else {
+        onlineTimeMs = getTimeBetweenDates(new Date(), lastSession.start);
+      }
+    }
+
+    return {
+      ...player,
+      nickname,
+      isOnline,
+      bedtimeData,
+      offlineTimeMs,
+      onlineTimeMs,
+      wipePlaytimeMs,
+    };
+  },
 };
 
 export const getLastSession = function (
@@ -180,46 +220,6 @@ export const getLastSession = function (
   if (!sorted.length) return null;
 
   return sorted[0];
-};
-
-export const analyzePlayer = function (
-  player: PlayerWithRelations,
-  nickname: string,
-  trackedServer?: RustServer
-): AnalyzedPlayer {
-  const isOnline = trackedServer
-    ? player.serverId === trackedServer.id
-    : !!player.serverId;
-
-  const bedtimeData = analyzeBedtimeSessions(player.sessions);
-  const lastSession = getLastSession(player.sessions);
-  const wipePlaytimeMs = trackedServer
-    ? timePlayedSince(
-        player.sessions.filter((s) => s.serverId === trackedServer.id),
-        trackedServer.wipe
-      )
-    : undefined;
-
-  let offlineTimeMs,
-    onlineTimeMs = undefined;
-
-  if (lastSession) {
-    if (!isOnline && !!lastSession.stop) {
-      offlineTimeMs = getTimeBetweenDates(new Date(), lastSession.stop);
-    } else {
-      onlineTimeMs = getTimeBetweenDates(new Date(), lastSession.start);
-    }
-  }
-
-  return {
-    ...player,
-    nickname,
-    isOnline,
-    bedtimeData,
-    offlineTimeMs,
-    onlineTimeMs,
-    wipePlaytimeMs,
-  };
 };
 
 export default Player;
