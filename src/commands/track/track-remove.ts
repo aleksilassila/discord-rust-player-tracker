@@ -1,13 +1,44 @@
-import { ChatInputCommandInteraction, Guild as DiscordGuild } from "discord.js";
+import {
+  ChatInputCommandInteraction,
+  Guild as DiscordGuild,
+  SlashCommandSubcommandBuilder,
+} from "discord.js";
 import { messages } from "../../messages";
 import Guild from "../../models/Guild";
+import { SubcommandWithGuild } from "../slash-command";
 
-export const executeRemove = async function (
-  interaction: ChatInputCommandInteraction,
-  playerId: string,
-  guild: DiscordGuild
-): Promise<void> {
-  await Guild.untrackPlayer(guild.id, playerId).then((b) =>
-    interaction.reply(b ? messages.untrackPlayer : messages.playerNotFound)
-  );
-};
+class TrackRemove extends SubcommandWithGuild {
+  buildSubcommand(
+    builder: SlashCommandSubcommandBuilder
+  ): SlashCommandSubcommandBuilder {
+    return builder
+      .setName(this.getName())
+      .setDescription("Remove player from track list")
+      .addStringOption((option) =>
+        option.setName("nickname").setDescription("Player nickname")
+      )
+      .addNumberOption((option) =>
+        option.setName("player-id").setDescription("Player Battlemetrics id")
+      );
+  }
+
+  async executeWithGuild(
+    interaction: ChatInputCommandInteraction,
+    guild: DiscordGuild
+  ): Promise<void> {
+    const playerId = await this.requirePlayerId(interaction);
+    if (!playerId) return;
+
+    await Guild.untrackPlayer(guild.id, playerId).then((b) =>
+      this.reply(
+        interaction,
+        b ? messages.untrackPlayer : messages.playerNotFound
+      )
+    );
+  }
+
+  getName(): string {
+    return "remove";
+  }
+}
+export default TrackRemove;

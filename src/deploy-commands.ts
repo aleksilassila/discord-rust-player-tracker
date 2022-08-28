@@ -5,10 +5,12 @@ import { getCommands } from "./commands";
 const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
 export const syncGuildCommands = async (guildId: string) => {
-  const commands = await getCommands();
+  const commands = getCommands();
 
   const commandsJSON = await Promise.all(
-    commands.map((c) => c.data(guildId).then((r) => r.toJSON()))
+    commands.map((command) =>
+      command.buildCommand().then((builder) => builder.toJSON())
+    )
   );
 
   rest

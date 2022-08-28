@@ -1,27 +1,27 @@
-import { SlashCommand } from "./slash-command";
-import { CommandInteraction } from "discord.js";
+import { Command } from "./slash-command";
+import { ChatInputCommandInteraction, CommandInteraction } from "discord.js";
+import Track from "./track/track";
+import Notifications from "./notifications/notifications";
+import Server from "./server/server";
 
-export const getCommands = async (): Promise<SlashCommand[]> =>
-  <Promise<SlashCommand[]>>(
-    Promise.all([
-      import("./track/track-command"),
-      import("./notifications-command"),
-      import("./server-command"),
-    ]).then((modules) => modules.map((m) => new m.default()))
-  );
+export function getCommands(): Command[] {
+  return [new Track(), new Notifications(), new Server()];
+}
 
 export async function execute(interaction: CommandInteraction) {
-  if (!interaction.guild) return;
   const commandName = interaction.commandName;
 
-  const commands = await getCommands();
+  const commands = getCommands();
+
+  if (!interaction.isChatInputCommand()) {
+    await interaction.reply("Unknown interaction type.").catch(console.error);
+    return;
+  }
 
   for (const command of commands) {
-    const data = await command.data(interaction.guild.id);
-
-    if (data.name === commandName) {
+    if (command.getName() === commandName) {
       try {
-        await command.execute(interaction);
+        await command.execute(<ChatInputCommandInteraction>interaction);
       } catch (error) {
         console.error(error);
         await interaction
