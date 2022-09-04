@@ -1,5 +1,5 @@
-import axios, { AxiosPromise, AxiosRequestConfig, AxiosResponse } from "axios";
-import { BATTLEMETRICS_TOKEN } from "../config";
+import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
+import { BATTLEMETRICS_TOKEN, REQUEST_CACHE_TIME } from "../config";
 import { getPlayerInfo } from "./battemetrics/get-player-info";
 import { getServerInfo } from "./battemetrics/get-server-info";
 import { getSessions } from "./battemetrics/get-sessions";
@@ -8,6 +8,8 @@ class Request<T> {
   static REQUEST_PER_SECOND = 5;
 
   static requests: Request<any>[] = [];
+  static cache: { [key: string]: { setTime: number; data: AxiosResponse } } =
+    {};
 
   config: AxiosRequestConfig;
   createTime: number;
@@ -17,7 +19,36 @@ class Request<T> {
     this.createTime = Date.now();
   }
 
+  static getCachedResponse(
+    config: AxiosRequestConfig
+  ): AxiosResponse | undefined {
+    const entry =
+      Request.cache[JSON.stringify({ url: config.url, params: config.params })];
+
+    if (!entry) return;
+    if (Date.now() - entry.setTime > REQUEST_CACHE_TIME) {
+      return;
+    }
+
+    return entry.data;
+  }
+
+  static cacheResponse(config: AxiosRequestConfig, data: AxiosResponse) {
+    Request.cache[JSON.stringify({ url: config.url, params: config.params })] =
+      {
+        setTime: Date.now(),
+        data,
+      };
+  }
+
   async send(): Promise<AxiosResponse<T>> {
+    const data = Request.getCachedResponse(this.config);
+
+    if (data) {
+      console.log("[Request] cached " + this.config.url);
+      return data;
+    }
+
     const waitTime =
       (1000 / Request.REQUEST_PER_SECOND) * Request.requests.length;
 
@@ -38,10 +69,17 @@ class Request<T> {
               ...this.config.headers,
               Authorization: `Bearer ${BATTLEMETRICS_TOKEN}`,
             },
-          }).catch((err) => {
-            console.error(err);
-            return err;
           })
+            .then((response) => {
+              console.log("[Request] fetched " + this.config.url);
+
+              Request.cacheResponse(this.config, response);
+              return response;
+            })
+            .catch((err) => {
+              console.error(err);
+              return err;
+            })
         );
       }, waitTime);
     });

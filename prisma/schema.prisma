@@ -11,82 +11,97 @@ datasource db {
 }
 
 model Player {
-  id       String         @id
-  name     String
+  id               String            @id
+  name             String
 
-  server   RustServer?     @relation(fields: [serverId], references: [id])
-  serverId String?
-  sessionsUpdatedAt DateTime @default(now())
+  currentServer    Server?           @relation(fields: [serverId], references: [id])
+  serverId         String?
+  sessionsUpdatedAt DateTime         @default(now())
 
-  sessions PlaySession[]
-  guilds   GuildPlayerTracks[]
+  sessions         PlaySession[]
+  playerTracks     PlayerTrack[]
 }
 
 model PlaySession {
-  id       String         @id
-  start    DateTime
-  stop     DateTime?
-  player   Player         @relation(fields: [playerId], references: [id])
-  playerId String
-  server   RustServer     @relation(fields: [serverId], references: [id])
-  serverId String
+  id               String           @id
+  start            DateTime
+  stop             DateTime?
+  player           Player           @relation(fields: [playerId], references: [id])
+  playerId         String
+  server           Server           @relation(fields: [serverId], references: [id])
+  serverId         String
 }
 
 model Guild {
-  id       String          @id
-  name     String
-  players  GuildPlayerTracks[]
-  persistentMessages PersistentMessage[]
-  notifiees GuildUserNotifications[]
+  id               String           @id
+  name             String
 
-  server   RustServer?    @relation(fields: [serverId], references: [id])
-  serverId String?
+  trackedServers   GuildServerTrack[]
 }
 
-model GuildPlayerTracks {
-  player   Player         @relation(fields: [playerId], references: [id])
-  playerId String
-  guild    Guild          @relation(fields: [guildId], references: [id])
-  guildId  String
+model GuildServerTrack {
+  channelName      String
+  channelId        String            @unique
+  server           Server            @relation(fields: [serverId], references: [id])
+  serverId         String
+  guild            Guild             @relation(fields: [guildId], references: [id])
+  guildId          String
 
-  nickname String
-  notes    String?
+  trackedPlayers   PlayerTrack[]
+  notificationReceivers NotificationReceiver[]
+  persistentMessages PersistentMessage[]
 
-  @@id([playerId, guildId])
+  @@id([channelId, guildId])
+}
+
+model PlayerTrack {
+  player           Player            @relation(fields: [playerId], references: [id])
+  playerId         String
+  guildServer      GuildServerTrack  @relation(fields: [guildId, channelId], references: [guildId, channelId], onDelete: Cascade)
+  channelId        String
+  guildId          String
+
+
+  nickname         String
+  notes            String?
+
+  @@id([playerId, channelId, guildId])
 }
 
 model PersistentMessage {
-  id       String          @id
-  pageIndex Int
-  key      String
-  guild    Guild           @relation(fields: [guildId], references: [id])
-  guildId  String
+  id               String            @id
+  pageIndex        Int
+  key              String
+  guildServer      GuildServerTrack  @relation(fields: [channelId, guildId], references: [channelId, guildId], onDelete: Cascade)
+  channelId        String
+  guildId          String
 }
 
 model User {
-  id       String          @id
-  notifications GuildUserNotifications[]
+  id               String            @id
+  notifications    NotificationReceiver[]
 }
 
-model GuildUserNotifications {
-  user     User            @relation(fields: [userId], references: [id])
-  userId   String
+model NotificationReceiver {
+  user             User              @relation(fields: [userId], references: [id])
+  userId           String
 
-  guild    Guild           @relation(fields: [guildId], references: [id])
-  guildId  String
+  guildServer      GuildServerTrack  @relation(fields: [guildServerGuildId, guildServerChannelId], references: [guildId, channelId], onDelete: Cascade)
+  guildServerGuildId String
+  guildServerChannelId String
 
-  @@id([userId, guildId])
+  @@id([userId, guildServerGuildId, guildServerChannelId])
 }
 
-model RustServer {
-  id       String          @id
+model Server {
+  id       String                    @id
   name     String
   wipe     DateTime
   mapUrl   String?
   mapPreview String?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime                 @updatedAt
 
   players  Player[]
   sessions PlaySession[]
-  guilds   Guild[]
+  guildServerTracks GuildServerTrack[]
 }

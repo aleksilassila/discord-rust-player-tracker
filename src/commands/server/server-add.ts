@@ -4,15 +4,15 @@ import {
   Guild as DiscordGuild,
   SlashCommandSubcommandBuilder,
 } from "discord.js";
-import Guild from "../../models/Guild";
 import { messages } from "../../messages";
+import Server from "../../models/Server";
 
-class ServerSet extends SubcommandWithGuild {
+class ServerAdd extends SubcommandWithGuild {
   buildSubcommand(
     builderWithName: SlashCommandSubcommandBuilder
   ): SlashCommandSubcommandBuilder {
     return builderWithName
-      .setDescription("Set server to track based on its Battlemetrics id.")
+      .setDescription("Add server to track based on its Battlemetrics id.")
       .addIntegerOption((option) =>
         option
           .setName("server-id")
@@ -28,13 +28,23 @@ class ServerSet extends SubcommandWithGuild {
     const serverId = await this.requireServerId(interaction);
     if (!serverId) return;
 
-    await Guild.setTrackedServer(guild.id, serverId);
+    const server = await Server.getOrCreate(serverId);
+
+    if (server) {
+      const guildServer = await Server.track(guild, server);
+      if (guildServer) {
+        const serverWithPlayers = await Server.getOrCreate(serverId);
+        if (serverWithPlayers) await Server.update(serverWithPlayers);
+      }
+    }
+
+    // await Guild.setTrackedServer(guild.id, serverId);
     await this.reply(interaction, messages.setTrackedServer);
   }
 
   getName(): string {
-    return "set";
+    return "add";
   }
 }
 
-export default ServerSet;
+export default ServerAdd;

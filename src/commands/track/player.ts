@@ -4,13 +4,12 @@ import {
   SlashCommandBuilder,
   SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
-import TrackRemove from "./track-remove";
-import TrackInfo from "./track-info";
-import TrackAdd from "./track-add";
-import TrackList from "./track-list";
-import TrackOverview from "./track-overview";
+import PlayerRemove from "./player-remove";
+import PlayerInfo from "./player-info";
+import PlayerAdd from "./player-add";
+import PlayerList from "./player-list";
 
-class Track extends CommandWithSubcommands {
+class Player extends CommandWithSubcommands {
   async buildCommandWithSubcommands(): Promise<
     SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder
   > {
@@ -26,17 +25,17 @@ class Track extends CommandWithSubcommands {
 
   getSubcommands(): Subcommand[] {
     return [
-      new TrackAdd(),
-      new TrackRemove(),
-      new TrackInfo(),
-      new TrackOverview(),
-      new TrackList(),
+      new PlayerAdd(),
+      new PlayerRemove(),
+      new PlayerInfo(),
+      // new TrackOverview(),
+      new PlayerList(),
     ];
   }
 
   getName(): string {
-    return "track";
+    return "player";
   }
 }
 
-export default Track;
+export default Player;

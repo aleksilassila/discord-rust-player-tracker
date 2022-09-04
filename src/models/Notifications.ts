@@ -1,55 +1,58 @@
+import { GuildServerTrack, User } from "@prisma/client";
 import prisma from "../prisma";
 import { PlayerModel } from "./Player";
-import { client } from "../app";
+import { fetchUser } from "../discord";
 
 const Notifications = {
-  async enableNotifications(userId: string, guildId: string) {
-    return prisma.user
+  async enableNotifications(user: User, guildServer: GuildServerTrack) {
+    return await prisma.notificationReceiver
       .upsert({
         where: {
-          id: userId,
-        },
-        update: {
-          notifications: {
-            create: [{ guildId }],
+          userId_guildServerGuildId_guildServerChannelId: {
+            userId: user.id,
+            guildServerChannelId: guildServer.channelId,
+            guildServerGuildId: guildServer.guildId,
           },
         },
+        update: {},
         create: {
-          id: userId,
-          notifications: {
-            create: [{ guildId }],
-          },
+          userId: user.id,
+          guildServerChannelId: guildServer.channelId,
+          guildServerGuildId: guildServer.guildId,
         },
       })
-      .catch((err) => {});
+      .catch(console.error);
   },
-  async disableNotifications(userId: string, guildId: string) {
-    return prisma.guildUserNotifications
+  async disableNotifications(user: User, guildServer: GuildServerTrack) {
+    return await prisma.notificationReceiver
       .delete({
         where: {
-          userId_guildId: {
-            userId,
-            guildId,
+          userId_guildServerGuildId_guildServerChannelId: {
+            userId: user.id,
+            guildServerChannelId: guildServer.channelId,
+            guildServerGuildId: guildServer.guildId,
           },
         },
       })
-      .catch((err) => {});
+      .catch(console.error);
   },
-  async sendNotifications(player: PlayerModel) {
-    // List of guilds that track that player
-    const guilds = await prisma.player
-      .findUnique({
+  broadcastPlayerLeft: async function (player: PlayerModel) {
+    await this.broadcastMessage(player, `${player.name} is now offline.`);
+  },
+  broadcastPlayerJoined: async function (player: PlayerModel) {
+    await this.broadcastMessage(player, `${player.name} is now online.`);
+  },
+  broadcastMessage: async function (player: PlayerModel, message: string) {
+    const users = await prisma.user
+      .findMany({
         where: {
-          id: player.id,
-        },
-        include: {
-          guilds: {
-            include: {
-              guild: {
-                include: {
-                  notifiees: {
-                    include: {
-                      user: true, // jeez
+          notifications: {
+            some: {
+              guildServer: {
+                trackedPlayers: {
+                  some: {
+                    player: {
+                      id: player.id,
                     },
                   },
                 },
@@ -58,26 +61,14 @@ const Notifications = {
           },
         },
       })
-      .then((p) => p?.guilds?.map((g) => g.guild));
+      .catch(console.error);
 
-    if (!guilds) return;
+    for (const user of users || []) {
+      const dcUser = await fetchUser(user);
 
-    const notifeeIds: string[] = [];
-
-    for (const g of guilds) {
-      for (const notifee of g.notifiees) {
-        notifeeIds.push(notifee.user.id);
+      if (dcUser) {
+        await dcUser.send(message).catch(console.error);
       }
-    }
-
-    for (const userId of Array.from(new Set(notifeeIds))) {
-      const user = await client.users.fetch(userId);
-
-      if (!user) console.log("Could not message", userId);
-
-      await user?.send(
-        `${player.name} is now ${player.serverId ? "online" : "offline"}.`
-      );
     }
   },
 };

@@ -1,142 +1,103 @@
-import { PersistentMessage } from "@prisma/client";
-import { Guild as DiscordGuild, Message, TextChannel } from "discord.js";
+import { GuildServerTrack, PersistentMessage } from "@prisma/client";
+import { Message, TextChannel } from "discord.js";
 import prisma from "../prisma";
+import { fetchMessageFromChannel } from "../discord";
+
+export interface PersistentDiscordMessage extends PersistentMessage {
+  message: Message;
+}
 
 const PersistentMessages = {
-  createMessages: async function (
-    guild: DiscordGuild,
-    channelId: string,
+  create: async function (
+    guildServer: GuildServerTrack,
+    channel: TextChannel,
     messageKey: string,
     messageCount: number
-  ): Promise<[PersistentMessage[] | undefined, Message[] | undefined]> {
-    const channel: TextChannel | undefined = await guild.channels
-      .fetch(channelId)
-      .then((c) => (c instanceof TextChannel ? <TextChannel>c : undefined));
-
-    if (!channel) {
-      console.error("Channel was undefined.");
-      return [undefined, undefined];
-    }
-
-    const messages: Message[] = [];
+  ): Promise<PersistentDiscordMessage[] | undefined> {
+    const messages: PersistentDiscordMessage[] = [];
 
     for (let i = 0; i < messageCount; i++) {
       const message = await channel.send("Loading...").catch(console.error);
-      if (message) messages.push(message);
+
+      if (message) {
+        const persistentMessage = await prisma.persistentMessage
+          .create({
+            data: {
+              id: message.id,
+              pageIndex: i,
+              key: messageKey,
+              channelId: channel.id,
+              guildId: guildServer.guildId,
+            },
+          })
+          .catch(console.error);
+
+        if (persistentMessage)
+          messages.push({
+            ...persistentMessage,
+            message,
+          });
+      }
     }
 
-    if (messages.length !== messageCount) {
-      console.error("Message count did not match.");
-    }
-
-    const persistentMessages: PersistentMessage[] = [];
-    for (let i = 0; i < messages.length; i++) {
-      const persistentMessage = await prisma.persistentMessage
-        .create({
-          data: {
-            id: messages[i].id,
-            pageIndex: i,
-            key: messageKey,
-            guildId: guild.id,
-          },
-        })
-        .catch(console.error);
-      if (persistentMessage) persistentMessages.push(persistentMessage);
-    }
-
-    return [persistentMessages, messages];
+    return messages;
   },
 
-  fetchMessage: async function (
-    guild: DiscordGuild,
-    messageId: string
-  ): Promise<Message | undefined> {
-    const tectChannels: TextChannel[] = Array.from(
-      guild.channels.cache.values()
-    )
-      .filter((c) => c instanceof TextChannel)
-      .map((c) => <TextChannel>c);
-
-    for (const channel of tectChannels) {
-      const message = await channel.messages
-        .fetch(messageId)
-        .catch(() => undefined);
-      if (message) return message;
-    }
-  },
-
-  deleteMessages: async function (
-    guild: DiscordGuild,
-    ...messageIds: string[]
-  ) {
+  delete: async function (...messages: PersistentDiscordMessage[]) {
     const deletedPersistentMessages = await prisma.persistentMessage.deleteMany(
       {
         where: {
           id: {
-            in: messageIds,
+            in: messages.map((m) => m.id),
           },
         },
       }
     );
 
-    for (const messageId of messageIds) {
-      await PersistentMessages.fetchMessage(guild, messageId).then(
-        async (m) => m && (await m.delete())
-      );
+    for (const message of messages) {
+      await message.message.delete().catch(console.error);
     }
   },
 
-  getMessages: async function (
-    guild: DiscordGuild,
+  getOrCreate: async function (
+    guildServer: GuildServerTrack,
+    channel: TextChannel,
     messageKey: string,
     messageCount: number
-  ): Promise<Message[] | undefined> {
-    const existingLocalMessages = await prisma.persistentMessage.findMany({
-      where: {
-        guildId: guild.id,
-        key: messageKey,
-      },
-    });
+  ): Promise<PersistentDiscordMessage[] | undefined> {
+    const existingLocalMessages =
+      (await prisma.persistentMessage
+        .findMany({
+          where: {
+            guildServer: {
+              channelId: guildServer.channelId,
+              guildId: guildServer.guildId,
+            },
+            key: messageKey,
+          },
+        })
+        .catch(console.error)) || [];
 
-    const existingMessages: Message[] = [];
+    const existingMessages: PersistentDiscordMessage[] = [];
 
     for (const localMessage of existingLocalMessages) {
-      const message = await PersistentMessages.fetchMessage(
-        guild,
-        localMessage.id
-      );
-      if (message) existingMessages.push(message);
+      const message = await fetchMessageFromChannel(channel, localMessage.id);
+      if (message) existingMessages.push({ ...localMessage, message });
     }
 
-    // If first message has been deleted, don't update.
-    if (existingMessages.length && !existingMessages[0]) return;
+    // // If first message has been deleted, don't update.
+    // if (existingMessages.length && !existingMessages[0]) return;
 
-    const existingFiltered = existingMessages.filter(
-      (m): m is Message => m !== undefined
-    );
-
-    if (existingFiltered.length !== messageCount) {
-      const messagesToDelete = existingLocalMessages.map((m) => m.id);
-
-      if (messagesToDelete.length) {
-        const channelId = await PersistentMessages.fetchMessage(
-          guild,
-          messagesToDelete[0]
-        ).then((m) => m?.channel.id);
-        await PersistentMessages.deleteMessages(guild, ...messagesToDelete);
-
-        if (channelId) {
-          const [pMessages, messages] = await PersistentMessages.createMessages(
-            guild,
-            channelId,
-            messageKey,
-            messageCount
-          );
-          return messages;
-        }
-      }
+    if (existingMessages.length !== messageCount) {
+      await PersistentMessages.delete(...existingMessages);
+      return await PersistentMessages.create(
+        guildServer,
+        channel,
+        messageKey,
+        messageCount
+      );
     } else {
-      return existingFiltered;
+      return existingMessages;
     }
   },
 };

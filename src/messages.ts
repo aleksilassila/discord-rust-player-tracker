@@ -1,4 +1,4 @@
-import { PlaySession, RustServer } from "@prisma/client";
+import { PlaySession, Server as RustServer } from "@prisma/client";
 import { PlayerModel } from "./models/Player";
 import { bold, EmbedBuilder, hyperlink } from "discord.js";
 import { analyzeBedtimeSessions, formatAsHours } from "./utils";

@@ -4,8 +4,8 @@ import {
   SlashCommandBuilder,
   SlashCommandSubcommandsOnlyBuilder,
 } from "discord.js";
-import ServerSet from "./server-set";
-import ServerUnset from "./server-unset";
+import ServerAdd from "./server-add";
+import ServerRemove from "./server-remove";
 
 class Server extends CommandWithSubcommands {
   async buildCommandWithSubcommands(
@@ -23,7 +23,7 @@ class Server extends CommandWithSubcommands {
   }
 
   getSubcommands(): Subcommand[] {
-    return [new ServerSet(), new ServerUnset()];
+    return [new ServerAdd(), new ServerRemove()];
   }
 }
 

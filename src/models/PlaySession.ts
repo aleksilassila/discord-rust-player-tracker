@@ -1,39 +1,57 @@
-import { PlayerSession } from "../apis/battemetrics/get-sessions";
+import { getSessions, PlayerSession } from "../apis/battemetrics/get-sessions";
 import Server from "./Server";
-import { PlaySession } from "@prisma/client";
+import { PlaySession, Server as RustServer } from "@prisma/client";
 import prisma from "../prisma";
+import { PlayerModel } from "./Player";
 
-const createPlaySession = async function (
-  session: PlayerSession,
-  playerId: string
-): Promise<PlaySession | undefined> {
-  const serverId = session?.relationships?.server?.data?.id;
+const PlaySession = {
+  updatePlayerSessions: async function (
+    player: PlayerModel,
+    serverIds?: string[]
+  ) {
+    const sessions = await getSessions(player.id, serverIds);
+    if (!sessions) return;
 
-  if (!serverId) return;
+    console.log("Updating play sessions for " + player.name);
 
-  const playSession = await prisma.playSession
-    .upsert({
-      where: {
-        id: session.id,
-      },
-      update: {
-        stop: session?.attributes?.stop,
-      },
-      create: {
-        id: <string>session?.id,
-        start: <string>session?.attributes?.start,
-        stop: session?.attributes?.stop,
-        playerId: playerId,
-        serverId: serverId,
-      },
-    })
-    .catch(() =>
-      console.error("Could not create play session. Does the server exist?")
-    );
+    for (const session of sessions) {
+      const serverId = session.relationships?.server?.data?.id;
 
-  return playSession || undefined;
+      if (!serverId) continue;
+      const server = await Server.getOrCreate(serverId);
+
+      if (!server) continue;
+
+      await this.createPlaySession(session, server, player);
+    }
+  },
+  createPlaySession: async function (
+    session: PlayerSession,
+    server: RustServer,
+    player: PlayerModel
+  ): Promise<PlaySession | undefined> {
+    const playSession = await prisma.playSession
+      .upsert({
+        where: {
+          id: session.id,
+        },
+        update: {
+          stop: session?.attributes?.stop,
+        },
+        create: {
+          id: <string>session?.id,
+          start: <string>session?.attributes?.start,
+          stop: session?.attributes?.stop,
+          playerId: player.id,
+          serverId: server.id,
+        },
+      })
+      .catch(() =>
+        console.error("Could not create play session. Does the server exist?")
+      );
+
+    return playSession || undefined;
+  },
 };
 
-export default {
-  createPlaySession,
-};
+export default PlaySession;

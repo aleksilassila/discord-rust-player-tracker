@@ -2,25 +2,19 @@ import {
   Player as PrismaPlayer,
   PlaySession as Session,
   Prisma,
-  RustServer,
+  Server as RustServer,
 } from "@prisma/client";
 
 import prisma from "../prisma";
-import { PlayerInfo } from "../apis/battemetrics/get-player-info";
-import Notifications from "./Notifications";
 import {
   analyzeBedtimeSessions,
   BedtimeData,
   getTimeBetweenDates,
-  isOlderThan,
   timePlayedSince,
-  uniqueArray,
 } from "../utils";
 import Battlemetrics from "../apis/Battlemetrics";
-import { SESSIONS_REFRESH_TIME } from "../config";
-import Server from "./Server";
 import PlaySession from "./PlaySession";
-import TaskQueue from "../task-queue";
+import { getPlayerInfo } from "../apis/battemetrics/get-player-info";
 
 export type PlayerModel = PrismaPlayer;
 
@@ -29,7 +23,7 @@ export type AnalyzedSession = Session & {};
 export type PlayerWithRelations = Prisma.PlayerGetPayload<{
   include: {
     sessions: true;
-    server: true;
+    currentServer: true;
   };
 }>;
 
@@ -44,130 +38,169 @@ export type AnalyzedPlayer = PlayerWithRelations & {
 };
 
 const Player = {
-  createMissingPlayer: async function (
-    playerInfo: PlayerInfo
-  ): Promise<PrismaPlayer | void> {
-    return prisma.player
-      .upsert({
+  getOrCreate: async function (
+    playerId: string
+  ): Promise<PrismaPlayer | undefined> {
+    let player = await prisma.player
+      .findUnique({
         where: {
-          id: playerInfo.id,
-        },
-        update: {},
-        create: {
-          id: <any>playerInfo?.id,
-          name: <any>playerInfo?.attributes?.name,
+          id: playerId,
         },
       })
       .catch(console.error);
-  },
 
-  updatePlayerSessions: function (
-    player: Prisma.PlayerGetPayload<{ include: { sessions: true } }>,
-    serverId?: string,
-    force: boolean = false
-  ) {
-    TaskQueue.addTask(async () => {
-      if (
-        !force &&
-        isOlderThan(player.sessionsUpdatedAt, SESSIONS_REFRESH_TIME)
-      )
-        return;
+    if (player === null) {
+      const playerInfo = await Battlemetrics.getPlayerInfo(playerId);
 
-      console.log("Fetching remote sessions for", player.name);
-
-      const remoteSessions = await Battlemetrics.getSessions(
-        player.id,
-        serverId ? [serverId] : undefined
-      );
-
-      if (!remoteSessions) {
-        console.error("No remote sessions for", player.name);
-        return;
+      if (!playerInfo) {
+        console.error("Could not fetch player info.");
+        return undefined;
       }
 
-      const serverIds = uniqueArray(
-        remoteSessions.map((s) => s.relationships?.server?.data?.id)
-      ).filter((s): s is string => !!s);
-
-      const rustServerIds: string[] = [];
-
-      for (const serverId of serverIds) {
-        const server = await Server.updateOrCreate(serverId);
-        if (server) rustServerIds.push(server.id);
-      }
-
-      for (const remoteSession of remoteSessions) {
-        const serverExists = rustServerIds.includes(
-          remoteSession.relationships?.server?.data?.id || ""
-        );
-
-        serverExists &&
-          (await PlaySession.createPlaySession(remoteSession, player.id));
-      }
-
-      await prisma.player.update({
-        where: { id: player.id },
-        data: {
-          sessionsUpdatedAt: new Date(),
-        },
-      });
-
-      await Player.updatePlayerServer(player);
-    }, `sessions-${player.id}`);
-  },
-
-  updateAllSessions: async function () {
-    console.log("Updating all sessions...");
-
-    const players = await prisma.player.findMany({
-      include: {
-        sessions: true,
-        guilds: {
-          include: {
-            guild: true,
+      console.log("Creating a new player " + playerInfo.attributes?.name);
+      player = await prisma.player
+        .create({
+          data: {
+            id: <any>playerInfo?.id,
+            name: <any>playerInfo?.attributes?.name,
           },
-        },
-      },
-    });
+        })
+        .catch(console.error);
 
-    for (const player of players) {
-      const uniqueServerIds = Array.from(
-        new Set(player.guilds.map((g) => g.guild.serverId))
-      );
-
-      for (const serverId of uniqueServerIds) {
-        await Player.updatePlayerSessions(player, serverId || undefined);
-      }
+      if (player) await PlaySession.updatePlayerSessions(player);
     }
 
-    console.log("All sessions updated.");
+    return player || undefined;
   },
 
-  updatePlayerServer: async function (player: PrismaPlayer) {
-    const lastSession = await prisma.playSession.findFirst({
-      where: {
-        playerId: player.id,
-      },
-      orderBy: {
-        start: "desc",
-      },
-    });
+  update: async function (
+    player: PlayerModel,
+    serverId?: string
+  ): Promise<PrismaPlayer | undefined> {
+    const playerInfo = await getPlayerInfo(player.id);
+    const name = playerInfo?.attributes?.name;
+    if (!playerInfo || !name) return;
 
-    if (lastSession) {
-      const updatedPlayer = await prisma.player.update({
-        where: {
-          id: player.id,
-        },
-        data: {
-          serverId: lastSession.stop ? null : lastSession.serverId,
-        },
-      });
+    await PlaySession.updatePlayerSessions(
+      player,
+      serverId ? [serverId] : undefined
+    );
 
-      if (updatedPlayer && player.serverId !== updatedPlayer.serverId) {
-        await Notifications.sendNotifications(updatedPlayer);
-      }
-    }
+    return (
+      (await prisma.player
+        .update({
+          where: {
+            id: player.id,
+          },
+          data: {
+            name,
+          },
+        })
+        .catch(console.error)) || undefined
+    );
   },
+
+  // updateSessions: function (
+  //   player: Prisma.PlayerGetPayload<{ include: { sessions: true } }>,
+  //   serverId?: string,
+  //   force: boolean = false
+  // ) {
+  //   TaskQueue.addTask(async () => {
+  //     console.log("Fetching remote sessions for", player.name);
+  //
+  //     const remoteSessions = await Battlemetrics.getSessions(
+  //       player.id,
+  //       serverId ? [serverId] : undefined
+  //     );
+  //
+  //     if (!remoteSessions) {
+  //       console.error("No remote sessions for", player.name);
+  //       return;
+  //     }
+  //
+  //     const serverIds = uniqueArray(
+  //       remoteSessions.map((s) => s.relationships?.server?.data?.id)
+  //     ).filter((s): s is string => !!s);
+  //
+  //     const rustServers: RustServer[] = [];
+  //
+  //     for (const serverId of serverIds) {
+  //       const server = await Server.getOrCreate(serverId);
+  //       if (server) rustServers.push(server);
+  //     }
+  //
+  //     for (const remoteSession of remoteSessions) {
+  //       const serverExists = rustServers
+  //         .map((s) => s.id)
+  //         .includes(remoteSession.relationships?.server?.data?.id || "");
+  //
+  //       serverExists &&
+  //         (await PlaySession.createPlaySession(remoteSession, player.id));
+  //     }
+  //
+  //     await prisma.player.update({
+  //       where: { id: player.id },
+  //       data: {
+  //         sessionsUpdatedAt: new Date(),
+  //       },
+  //     });
+  //
+  //     await Player.updatePlayerServer(player);
+  //   }, `sessions-${player.id}`);
+  // },
+  //
+  // updateAllSessions: async function () {
+  //   console.log("Updating all sessions...");
+  //
+  //   const players = await prisma.player.findMany({
+  //     include: {
+  //       sessions: true,
+  //       guilds: {
+  //         include: {
+  //           guild: true,
+  //         },
+  //       },
+  //     },
+  //   });
+  //
+  //   for (const player of players) {
+  //     const uniqueServerIds = Array.from(
+  //       new Set(player.guilds.map((g) => g.guild.serverId))
+  //     );
+  //
+  //     for (const serverId of uniqueServerIds) {
+  //       await Player.updateSessions(player, serverId || undefined);
+  //     }
+  //   }
+  //
+  //   console.log("All sessions updated.");
+  // },
+
+  // updatePlayerServer: async function (player: PrismaPlayer) {
+  //   const lastSession = await prisma.playSession.findFirst({
+  //     where: {
+  //       playerId: player.id,
+  //     },
+  //     orderBy: {
+  //       start: "desc",
+  //     },
+  //   });
+  //
+  //   if (lastSession) {
+  //     const updatedPlayer = await prisma.player.update({
+  //       where: {
+  //         id: player.id,
+  //       },
+  //       data: {
+  //         serverId: lastSession.stop ? null : lastSession.serverId,
+  //       },
+  //     });
+  //
+  //     if (updatedPlayer && player.serverId !== updatedPlayer.serverId) {
+  //       await Notifications.sendNotifications(updatedPlayer);
+  //     }
+  //   }
+  // },
 
   analyzePlayer: function (
     player: PlayerWithRelations,

@@ -3,15 +3,17 @@ import { DISCORD_TOKEN } from "./config";
 import { execute } from "./commands";
 import { syncAllGuildsCommands } from "./deploy-commands";
 import { CronJob } from "cron";
-import Player from "./models/Player";
 import Guild from "./models/Guild";
+import Server from "./models/Server";
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 const cronCallback = async function () {
   try {
-    await Player.updateAllSessions();
-    await Guild.updateAllOverviews();
+    // await Player.updateAllSessions();
+    await Server.updateAll();
+    // await Server.updateAllOverviews();
+    // await Guild.updateAllOverviews();
   } catch (err) {
     console.error("Error executing cron", err);
   }

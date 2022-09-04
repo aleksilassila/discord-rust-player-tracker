@@ -1,11 +1,11 @@
 import { Command } from "./slash-command";
 import { ChatInputCommandInteraction, CommandInteraction } from "discord.js";
-import Track from "./track/track";
+import Player from "./track/player";
 import Notifications from "./notifications/notifications";
 import Server from "./server/server";
 
 export function getCommands(): Command[] {
-  return [new Track(), new Notifications(), new Server()];
+  return [new Player(), new Notifications(), new Server()];
 }
 
 export async function execute(interaction: CommandInteraction) {
@@ -21,7 +21,7 @@ export async function execute(interaction: CommandInteraction) {
   for (const command of commands) {
     if (command.getName() === commandName) {
       try {
-        await command.execute(<ChatInputCommandInteraction>interaction);
+        await command.executeCommand(<ChatInputCommandInteraction>interaction);
       } catch (error) {
         console.error(error);
         await interaction

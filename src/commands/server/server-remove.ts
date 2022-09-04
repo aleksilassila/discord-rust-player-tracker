@@ -1,30 +1,36 @@
-import { SubcommandWithGuild } from "../slash-command";
+import { SubcommandWithChannel } from "../slash-command";
 import {
   ChatInputCommandInteraction,
   Guild as DiscordGuild,
   SlashCommandSubcommandBuilder,
+  TextChannel,
 } from "discord.js";
-import Guild from "../../models/Guild";
 import { messages } from "../../messages";
+import Server from "../../models/Server";
 
-class ServerUnset extends SubcommandWithGuild {
+class ServerRemove extends SubcommandWithChannel {
   buildSubcommand(
     builderWithName: SlashCommandSubcommandBuilder
   ): SlashCommandSubcommandBuilder {
     return builderWithName.setDescription("Remove tracked server.");
   }
 
-  async executeWithGuild(
+  async executeWithChannel(
     interaction: ChatInputCommandInteraction,
-    guild: DiscordGuild
+    guild: DiscordGuild,
+    channel: TextChannel
   ): Promise<void> {
-    await Guild.unsetTrackedServer(guild.id);
+    // await Guild.unsetTrackedServer(guild.id);
+    const guildServer = await this.requireGuildServer(interaction, channel);
+    if (!guildServer) return;
+
+    await Server.untrack(guildServer);
     await this.reply(interaction, messages.unsetTrackedServer);
   }
 
   getName(): string {
-    return "unset";
+    return "remove";
   }
 }
 
-export default ServerUnset;
+export default ServerRemove;

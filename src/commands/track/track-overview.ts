@@ -1,7 +1,6 @@
 import {
   ChatInputCommandInteraction,
   Guild,
-  Guild as DiscordGuild,
   SlashCommandSubcommandBuilder,
 } from "discord.js";
 import prisma from "../../prisma";

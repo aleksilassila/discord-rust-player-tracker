@@ -1,13 +1,14 @@
-import { SubcommandWithGuild } from "../slash-command";
+import { SubcommandWithChannel } from "../slash-command";
 import {
   ChatInputCommandInteraction,
   Guild,
   SlashCommandSubcommandBuilder,
+  TextChannel,
 } from "discord.js";
 import Notifications from "../../models/Notifications";
 import { messages } from "../../messages";
 
-class NotificationsDisable extends SubcommandWithGuild {
+class NotificationsDisable extends SubcommandWithChannel {
   buildSubcommand(
     builder: SlashCommandSubcommandBuilder
   ): SlashCommandSubcommandBuilder {
@@ -16,11 +17,16 @@ class NotificationsDisable extends SubcommandWithGuild {
       .setDescription("Disable all player notifications");
   }
 
-  async executeWithGuild(
+  async executeWithChannel(
     interaction: ChatInputCommandInteraction,
-    guild: Guild
+    guild: Guild,
+    channel: TextChannel
   ): Promise<void> {
-    await Notifications.disableNotifications(interaction.user.id, guild.id);
+    const guildServer = await this.requireGuildServer(interaction, channel);
+    const user = await this.requireUser(interaction);
+    if (!guildServer || !user) return;
+
+    await Notifications.disableNotifications(user, guildServer);
 
     await this.reply(interaction, {
       content: messages.allNotificationsDisabled,

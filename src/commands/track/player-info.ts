@@ -2,12 +2,13 @@ import {
   ChatInputCommandInteraction,
   Guild as DiscordGuild,
   SlashCommandSubcommandBuilder,
+  TextChannel,
 } from "discord.js";
 import { messages } from "../../messages";
 import prisma from "../../prisma";
-import { Subcommand } from "../slash-command";
+import { SubcommandWithChannel } from "../slash-command";
 
-class TrackInfo extends Subcommand {
+class PlayerInfo extends SubcommandWithChannel {
   buildSubcommand(
     builder: SlashCommandSubcommandBuilder
   ): SlashCommandSubcommandBuilder {
@@ -17,12 +18,20 @@ class TrackInfo extends Subcommand {
       .addStringOption((option) =>
         option.setName("nickname").setDescription("Player nickname")
       )
-      .addNumberOption((option) =>
+      .addIntegerOption((option) =>
         option.setName("player-id").setDescription("Player Battlemetrics id")
       );
   }
 
-  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+  getName(): string {
+    return "info";
+  }
+
+  async executeWithChannel(
+    interaction: ChatInputCommandInteraction,
+    guild: DiscordGuild,
+    channel: TextChannel
+  ): Promise<void> {
     const playerId = await this.requirePlayerId(interaction);
     if (!playerId) return;
 
@@ -46,10 +55,6 @@ class TrackInfo extends Subcommand {
 
     await this.reply(interaction, messages.trackedPlayerInfo(player));
   }
-
-  getName(): string {
-    return "info";
-  }
 }
 
-export default TrackInfo;
+export default PlayerInfo;
