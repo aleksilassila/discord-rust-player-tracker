@@ -5,10 +5,13 @@ import { messages } from "../messages";
 import Player, { AnalyzedPlayer } from "../models/Player";
 import prisma from "../prisma";
 
-const renderStatus = (p: AnalyzedPlayer) =>
-  `${p.isOnline ? "🟢" : !!p.currentServer ? "🟠" : "🔴"} | ${p.nickname} (${
+const renderStatus = (p: AnalyzedPlayer) => {
+  const name = p.name === p.nickname ? p.name : `${p.name}, aka. ${p.nickname}`
+
+  return `${p.isOnline ? "🟢" : !!p.currentServer ? "🟠" : "🔴"} | ${name} (${
     p.id
   })`;
+}
 
 const renderPlaytime = (p: AnalyzedPlayer) => {
   const time = p.onlineTimeMs || p.offlineTimeMs || 0;
@@ -228,10 +231,7 @@ export const getOverviewEmbeds = async function (
       return a.serverId ? -1 : 1;
     }
 
-    return (
-      (a.offlineTimeMs || a.onlineTimeMs || 0) -
-      (b.offlineTimeMs || b.onlineTimeMs || 0)
-    );
+    return (b.wipePlaytimeMs || 0) - (a.wipePlaytimeMs || 0);
   });
 
   return renderOverviewEmbeds(players, guildServer.server);

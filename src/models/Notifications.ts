@@ -37,10 +37,10 @@ const Notifications = {
       .catch(console.error);
   },
   broadcastPlayerLeft: async function (player: PlayerModel) {
-    await this.broadcastMessage(player, `${player.name} is now offline.`);
+    await this.broadcastMessage(player, `🔴 ${player.name} is now offline.`);
   },
   broadcastPlayerJoined: async function (player: PlayerModel) {
-    await this.broadcastMessage(player, `${player.name} is now online.`);
+    await this.broadcastMessage(player, `🟢 ${player.name} is now online.`);
   },
   broadcastMessage: async function (player: PlayerModel, message: string) {
     const users = await prisma.user
