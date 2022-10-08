@@ -25,10 +25,10 @@ export const getTimeBetweenDates = (date1: Date, date2: Date): number =>
 export const isOlderThan = (date: Date, milliseconds: number): boolean =>
   getTimeBetweenDates(new Date(), date) > milliseconds;
 
-export const timePlayedSince = (sessions: PlaySession[], date: Date) => {
+export const getWipePlaytime = (sessions: PlaySession[], wipe: Date) => {
   let time = 0;
   for (const session of sessions) {
-    if (session.start.getTime() > date.getTime()) {
+    if (session.start.getTime() > wipe.getTime() - 1000 * 60 * 5) {
       time += (session.stop?.getTime() || Date.now()) - session.start.getTime();
     }
   }

@@ -10,7 +10,7 @@ import {
   analyzeBedtimeSessions,
   BedtimeData,
   getTimeBetweenDates,
-  timePlayedSince,
+  getWipePlaytime,
 } from "../utils";
 import Battlemetrics from "../apis/Battlemetrics";
 import PlaySession from "./PlaySession";
@@ -112,7 +112,7 @@ const Player = {
     const bedtimeData = analyzeBedtimeSessions(player.sessions);
     const lastSession = getLastSession(player.sessions);
     const wipePlaytimeMs = trackedServer
-      ? timePlayedSince(
+      ? getWipePlaytime(
           player.sessions.filter((s) => s.serverId === trackedServer.id),
           trackedServer.wipe
         )

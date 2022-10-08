@@ -6,12 +6,12 @@ import Player, { AnalyzedPlayer } from "../models/Player";
 import prisma from "../prisma";
 
 const renderStatus = (p: AnalyzedPlayer) => {
-  const name = p.name === p.nickname ? p.name : `${p.name}, aka. ${p.nickname}`
+  const name = p.name === p.nickname ? p.name : `${p.name}, aka. ${p.nickname}`;
 
   return `${p.isOnline ? "🟢" : !!p.currentServer ? "🟠" : "🔴"} | ${name} (${
     p.id
   })`;
-}
+};
 
 const renderPlaytime = (p: AnalyzedPlayer) => {
   const time = p.onlineTimeMs || p.offlineTimeMs || 0;
@@ -111,7 +111,7 @@ const renderDescription = (
     `(showing ${players.length}/${allPlayers.length})\n` +
     `${
       trackedServer?.mapUrl
-        ? hyperlink(bold("View Server Map"), trackedServer?.mapUrl)
+        ? hyperlink(bold("🗺️ View Server Map"), trackedServer?.mapUrl)
         : ""
     }\n` +
     `${trackedServer ? hyperlink("Connect", "steam://connect/") : ""}`
