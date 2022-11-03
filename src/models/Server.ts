@@ -18,7 +18,6 @@ import Notifications from "./Notifications";
 import { getOverviewEmbeds } from "../embeds/overview-embed";
 import PersistentMessage from "./PersistentMessage";
 import { GuildServerFull } from "./Guild";
-import { PrismaClientValidationError } from "prisma/prisma-client/runtime";
 
 // Store ids to not fetch non rust servers twice
 const nonRustServerIds: string[] = [];
@@ -60,7 +59,14 @@ const Server = {
           },
         })
         .catch((err) => {
-          console.error("Could not create new server " + serverId);
+          console.error(
+            "Could not create new server " +
+              serverId +
+              " with parameters: " +
+              serverInfo?.id,
+            serverInfo?.attributes?.name,
+            serverInfo?.attributes?.details?.rust_last_wipe
+          );
         });
     }
 
