@@ -111,9 +111,7 @@ export abstract class CommandAbstract {
   async requirePlayerId(
     interaction: ChatInputCommandInteraction
   ): Promise<string | undefined> {
-    const playerId =
-      interaction.options.getString("nickname") ||
-      interaction.options.getInteger("player-id")?.toString();
+    const playerId = interaction.options.getInteger("player-id")?.toString();
 
     if (!playerId) {
       await this.replyEphemeral(
@@ -128,13 +126,35 @@ export abstract class CommandAbstract {
   async requirePlayer(
     interaction: ChatInputCommandInteraction
   ): Promise<PlayerModel | undefined> {
-    const playerId = await this.requirePlayerId(interaction);
+    const nickname = interaction.options.getString("nickname");
+    let player;
 
-    if (!playerId) {
-      return;
+    if (nickname) {
+      const players =
+        (await prisma.player
+          .findMany({
+            where: {
+              name: {
+                contains: nickname,
+              },
+            },
+          })
+          .catch(console.error)) || [];
+      if (players.length > 1) {
+        await this.replyEphemeral(interaction, "More than one player found.");
+        return;
+      } else if (players.length === 1) {
+        player = await Player.updateOrCreate(players[0].id);
+      }
+    } else {
+      const playerId = await this.requirePlayerId(interaction);
+
+      if (!playerId) {
+        return;
+      }
+
+      player = await Player.updateOrCreate(playerId);
     }
-
-    const player = await Player.updateOrCreate(playerId);
 
     if (!player) {
       await this.replyEphemeral(interaction, "Could not fetch target player.");

@@ -1,10 +1,40 @@
 import { client } from "./app";
-import { Guild, Message, TextChannel, User as DiscordUser } from "discord.js";
+import {
+  CategoryChannel,
+  ChannelType,
+  Guild,
+  Message,
+  TextChannel,
+  User as DiscordUser,
+} from "discord.js";
 import { User } from "@prisma/client";
 import { GuildModel } from "./models/Guild";
 
 export const getChannelName = function (name: string) {
   return name.replace(" ", "-").replace(/[^a-zA-Z0-9\-]/g, "");
+};
+
+const getOrCreateCategory = async function (
+  guild: Guild,
+  name: string
+): Promise<CategoryChannel> {
+  const categoryName = getChannelName(name);
+  const category = guild.channels.cache.find(
+    (channel) =>
+      channel.type === ChannelType.GuildCategory &&
+      channel.name === categoryName
+  );
+
+  if (category) {
+    return category as CategoryChannel;
+  } else {
+    return await (guild.channels
+      .create({
+        name: categoryName,
+        type: ChannelType.GuildCategory,
+      })
+      .catch((err) => undefined) as Promise<CategoryChannel>);
+  }
 };
 
 export const getOrCreateChannel = async function (
@@ -16,7 +46,10 @@ export const getOrCreateChannel = async function (
 
   if (!channel) {
     channel = await guild.channels
-      .create({ name, topic: "servers" })
+      .create({
+        name,
+        parent: await getOrCreateCategory(guild, "tracked-servers"),
+      })
       .catch((err) => undefined);
   }
 

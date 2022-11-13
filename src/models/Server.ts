@@ -39,19 +39,15 @@ const Server = {
   /**
    * @return Created ServerModel or undefined if already exists
    */
-  addServer: async function (
+  track: async function (
     serverId: string,
     guild: Guild
   ): Promise<ServerWithPlayers | undefined> {
     if (
-      (await prisma.server.count({
+      (await prisma.guildServerTrack.count({
         where: {
-          id: serverId,
-          guildServerTracks: {
-            every: {
-              guildId: guild.id,
-            },
-          },
+          guildId: guild.id,
+          serverId,
         },
       })) !== 0
     ) {
@@ -110,6 +106,7 @@ const Server = {
 
     if (server !== undefined) {
       await this._connectToGuild(server, guild);
+      await Server.update(server);
     }
 
     return server;
@@ -129,18 +126,6 @@ const Server = {
         })
         .catch(console.error)) || undefined
     );
-  },
-  getOrCreate: async function (
-    serverId: string,
-    guild: Guild
-  ): Promise<ServerWithPlayers | undefined> {
-    const server = await Server.get(serverId);
-
-    if (server) {
-      return server;
-    }
-
-    return await Server.addServer(serverId, guild);
   },
   _connectToGuild: async function (
     server: ServerModel,
@@ -203,7 +188,7 @@ const Server = {
         .catch(console.error)) || undefined
     );
   },
-  addPlayer: async function (
+  trackPlayer: async function (
     guild: Guild,
     guildServerTrack: GuildServerTrack,
     player: PlayerModel,
@@ -231,7 +216,7 @@ const Server = {
 
     return playerTrack;
   },
-  removePlayer: async function (
+  untrackPlayer: async function (
     guild: Guild,
     guildServerTrack: GuildServerTrack,
     player: PlayerModel
@@ -269,6 +254,14 @@ const Server = {
       await Server.update(server);
     }
   },
+  /**
+   * Update a server and all guilds tracking it
+   * Will not run if another update is in progress or
+   * if the server was updated less than 30 seconds ago.
+   *
+   * Updates server information, player information,
+   * player sessions, sends alerts and updates overviews.
+   */
   update: async function (
     server: Prisma.ServerGetPayload<{ include: { players: true } }>
   ): Promise<

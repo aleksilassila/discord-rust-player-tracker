@@ -113,8 +113,7 @@ const renderDescription = (
       trackedServer?.mapUrl
         ? hyperlink(bold("🗺️ View Server Map"), trackedServer?.mapUrl)
         : ""
-    }\n` +
-    `${trackedServer ? hyperlink("Connect", "steam://connect/") : ""}`
+    }\n`
   );
 };
 

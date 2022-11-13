@@ -28,7 +28,7 @@ class ServerAdd extends SubcommandWithGuild {
     const serverId = await this.requireServerId(interaction);
     if (!serverId) return;
 
-    const server = await Server.addServer(serverId, guild);
+    const server = await Server.track(serverId, guild);
 
     // if (server) {
     //   const guildServer = await Server.track(guild, server);
@@ -40,9 +40,9 @@ class ServerAdd extends SubcommandWithGuild {
 
     // await Guild.setTrackedServer(guild.id, serverId);
     if (server) {
-      await this.reply(interaction, "Server tracked.");
+      await this.replyEphemeral(interaction, "Server tracked.");
     } else {
-      await this.reply(
+      await this.replyEphemeral(
         interaction,
         "Could not track server. Is it already being tracked?"
       );

@@ -39,14 +39,8 @@ class PlayerAdd extends SubcommandWithChannel {
   ): Promise<void> {
     const playerId = await this.requirePlayerId(interaction);
     const guildServer = await this.requireGuildServer(interaction, channel);
-    if (!playerId || !guildServer) return;
-
     const player = await this.requirePlayer(interaction);
-
-    if (!player) {
-      await this.replyEphemeral(interaction, "Error adding player.");
-      return;
-    }
+    if (!playerId || !guildServer || !player) return;
 
     const playerNickname =
       interaction.options.getString("nickname") || player.name;
@@ -54,12 +48,12 @@ class PlayerAdd extends SubcommandWithChannel {
     const server = await Server.get(guildServer.serverId);
 
     if (server) {
-      await Server.addPlayer(guild, guildServer, player, playerNickname);
+      await Server.trackPlayer(guild, guildServer, player, playerNickname);
       await this.replyEphemeral(
         interaction,
         messages.trackPlayer(player.name, player.id, playerNickname)
       );
-      await Server.update(server);
+      await Server.updateOverviews(guildServer);
     } else {
       await this.replyEphemeral(
         interaction,

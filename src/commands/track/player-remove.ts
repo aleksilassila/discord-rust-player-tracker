@@ -38,11 +38,10 @@ class PlayerRemove extends SubcommandWithChannel {
     const guildServer = await this.requireGuildServer(interaction, channel);
     if (!guildServer) return;
 
-    await Server.removePlayer(guild, guildServer, player);
+    await Server.untrackPlayer(guild, guildServer, player);
     await this.reply(interaction, messages.untrackPlayer);
 
-    const server = await Server.get(guildServer.serverId);
-    if (server) await Server.update(server);
+    await Server.updateOverviews(guildServer);
   }
 }
 export default PlayerRemove;

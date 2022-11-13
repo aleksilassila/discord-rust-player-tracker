@@ -32,12 +32,16 @@ class PlayerInfo extends SubcommandWithChannel {
     guild: DiscordGuild,
     channel: TextChannel
   ): Promise<void> {
-    const playerId = await this.requirePlayerId(interaction);
-    if (!playerId) return;
+    const player = await this.requirePlayer(interaction);
 
-    const player = await prisma.player.findUnique({
+    if (!player) {
+      return;
+    }
+
+    // Yuk
+    const playerWithSessions = await prisma.player.findUnique({
       where: {
-        id: playerId,
+        id: player.id,
       },
       include: {
         sessions: {
@@ -48,12 +52,14 @@ class PlayerInfo extends SubcommandWithChannel {
       },
     });
 
-    if (!player) {
+    if (!playerWithSessions) {
       await this.reply(interaction, messages.playerNotFound);
-      return;
+    } else {
+      await this.reply(
+        interaction,
+        messages.trackedPlayerInfo(playerWithSessions)
+      );
     }
-
-    await this.reply(interaction, messages.trackedPlayerInfo(player));
   }
 }
 

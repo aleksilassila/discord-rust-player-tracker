@@ -44,7 +44,7 @@ model Guild {
 model GuildServerTrack {
   channelName      String
   channelId        String            @unique
-  server           Server            @relation(fields: [serverId], references: [id])
+  server           Server            @relation(fields: [serverId], references: [id], onDelete: Restrict)
   serverId         String
   guild            Guild             @relation(fields: [guildId], references: [id])
   guildId          String
