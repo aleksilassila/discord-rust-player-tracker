@@ -4,7 +4,6 @@ import {
   Guild as DiscordGuild,
   SlashCommandSubcommandBuilder,
 } from "discord.js";
-import { messages } from "../../messages";
 import Server from "../../models/Server";
 
 class ServerAdd extends SubcommandWithGuild {

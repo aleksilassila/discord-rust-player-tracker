@@ -12,10 +12,8 @@ import {
   getTimeBetweenDates,
   getWipePlaytime,
 } from "../utils";
-import Battlemetrics from "../apis/Battlemetrics";
 import PlaySession from "./PlaySession";
 import { getPlayerInfo } from "../apis/battemetrics/get-player-info";
-import { getSessions } from "../apis/battemetrics/get-sessions";
 
 export type PlayerModel = PrismaPlayer;
 

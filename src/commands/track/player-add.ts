@@ -4,7 +4,6 @@ import {
   SlashCommandSubcommandBuilder,
   TextChannel,
 } from "discord.js";
-import Player from "../../models/Player";
 import { messages } from "../../messages";
 import { SubcommandWithChannel } from "../slash-command";
 import Server from "../../models/Server";
