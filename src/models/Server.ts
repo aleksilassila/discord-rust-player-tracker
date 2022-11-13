@@ -18,41 +18,80 @@ import Notifications from "./Notifications";
 import { getOverviewEmbeds } from "../embeds/overview-embed";
 import PersistentMessage from "./PersistentMessage";
 import { GuildServerFull } from "./Guild";
+import Task from "../task/task";
 
 // Store ids to not fetch non rust servers twice
 const nonRustServerIds: string[] = [];
 
-export type ServerFull = Prisma.ServerGetPayload<{
+export type ServerWithPlayers = Prisma.ServerGetPayload<{
   include: { players: true };
 }>;
 
+/*
+TODO:
+  Separate addServer, getServer and make it so that creation of server
+  triggers player list update, and handle creation of guild server track.
+  Also make sure to not listen to commands before the server has been initialized and updated.
+  Commands should not mess with and be messed by data fetching and server updates, so maybe queue them?
+ */
+
 const Server = {
-  getOrCreate: async function (
-    serverId: string
-  ): Promise<ServerFull | undefined> {
-    let server = await prisma.server
-      .findUnique({
+  /**
+   * @return Created ServerModel or undefined if already exists
+   */
+  addServer: async function (
+    serverId: string,
+    guild: Guild
+  ): Promise<ServerWithPlayers | undefined> {
+    if (
+      (await prisma.server.count({
         where: {
           id: serverId,
+          guildServerTracks: {
+            every: {
+              guildId: guild.id,
+            },
+          },
         },
-        include: {
-          players: true,
-        },
-      })
-      .catch(console.error);
+      })) !== 0
+    ) {
+      return undefined;
+    }
 
-    if (server === null) {
-      const serverInfo = await getServerInfo(serverId);
+    const serverInfo = await getServerInfo(serverId);
 
-      server = await prisma.server
-        .create({
-          data: {
-            id: <string>serverInfo?.id,
-            name: <string>serverInfo?.attributes?.name,
-            wipe: <string>serverInfo?.attributes?.details?.rust_last_wipe,
-            mapUrl: serverInfo?.attributes?.details?.rust_maps?.url,
-            mapPreview:
-              serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
+    const id = serverInfo?.id;
+    const name = serverInfo?.attributes?.name;
+    const wipe = serverInfo?.attributes?.details?.rust_last_wipe;
+    const mapUrl = serverInfo?.attributes?.details?.rust_maps?.url;
+    const mapPreview = serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl;
+
+    if (id === undefined || name === undefined || wipe === undefined) {
+      console.error(
+        `Invalid server info response id: ${id}, name: ${name}, wipe: ${wipe}`
+      );
+      return undefined;
+    }
+
+    const server =
+      (await prisma.server
+        .upsert({
+          where: {
+            id: serverId,
+          },
+          create: {
+            id,
+            name,
+            wipe,
+            mapUrl,
+            mapPreview,
+          },
+          update: {
+            id,
+            name,
+            wipe,
+            mapUrl,
+            mapPreview,
           },
           include: {
             players: true,
@@ -67,14 +106,45 @@ const Server = {
             serverInfo?.attributes?.name,
             serverInfo?.attributes?.details?.rust_last_wipe
           );
-        });
+        })) || undefined;
+
+    if (server !== undefined) {
+      await this._connectToGuild(server, guild);
     }
 
-    return server || undefined;
+    return server;
   },
-  track: async function (
-    guild: Guild,
-    server: ServerModel
+  get: async function (
+    serverId: string
+  ): Promise<ServerWithPlayers | undefined> {
+    return (
+      (await prisma.server
+        .findUnique({
+          where: {
+            id: serverId,
+          },
+          include: {
+            players: true,
+          },
+        })
+        .catch(console.error)) || undefined
+    );
+  },
+  getOrCreate: async function (
+    serverId: string,
+    guild: Guild
+  ): Promise<ServerWithPlayers | undefined> {
+    const server = await Server.get(serverId);
+
+    if (server) {
+      return server;
+    }
+
+    return await Server.addServer(serverId, guild);
+  },
+  _connectToGuild: async function (
+    server: ServerModel,
+    guild: Guild
   ): Promise<GuildServerFull | undefined> {
     let guildServerTrack = await prisma.guildServerTrack
       .findFirst({
@@ -204,20 +274,34 @@ const Server = {
   ): Promise<
     Prisma.ServerGetPayload<{ include: { players: true } }> | undefined
   > {
+    return new UpdateTask(server).run();
+  },
+  _update: async function (
+    server: Prisma.ServerGetPayload<{ include: { players: true } }>
+  ): Promise<
+    Prisma.ServerGetPayload<{ include: { players: true } }> | undefined
+  > {
     console.log("Updating server " + server.name);
 
     const serverInfo = await getServerInfo(server.id);
     if (!serverInfo) return;
 
-    const players: PlayerModel[] = [];
+    const currentPlayerIds: string[] = serverInfo.players
+      ? (serverInfo.players.map((p) => p.id).filter((p) => !!p) as string[])
+      : [];
+    const oldPlayerIds = server.players.map((p) => p.id);
 
-    // Create players that joined but don't exist
-    for (const includedPlayer of serverInfo.included || []) {
-      const playerId = includedPlayer.id;
-      if (!playerId) continue;
+    const joinedPlayers = currentPlayerIds.filter(
+      (id) => oldPlayerIds.includes(id) === false
+    );
 
-      const player = await Player.getOrCreate(playerId);
-      if (player) players.push(player);
+    const leftPlayers = oldPlayerIds.filter(
+      (p) => currentPlayerIds.includes(p) === false
+    );
+
+    // Update PlaySessions
+    for (const playerId of [...leftPlayers, ...joinedPlayers]) {
+      await Player.updateOrCreate(playerId, server.id);
     }
 
     const updated =
@@ -231,7 +315,7 @@ const Server = {
             mapPreview: serverInfo.attributes?.details?.rust_maps?.thumbnailUrl,
             wipe: serverInfo.attributes?.details?.rust_last_wipe,
             players: {
-              set: players.map((p) => ({ id: p.id })),
+              set: currentPlayerIds.map((id) => ({ id })),
             },
           },
           include: {
@@ -241,28 +325,6 @@ const Server = {
         .catch(console.error)) || undefined;
 
     if (!updated) return;
-
-    // Send notifications
-    const joinedPlayers = updated.players.filter(
-      (p) => server.players.map((p) => p.id).includes(p.id) === false
-    );
-
-    const leftPlayers = server.players.filter(
-      (p) => updated.players.map((p) => p.id).includes(p.id) === false
-    );
-
-    for (const player of joinedPlayers) {
-      await Notifications.broadcastPlayerJoined(player);
-    }
-
-    for (const player of leftPlayers) {
-      await Notifications.broadcastPlayerLeft(player);
-    }
-
-    // Update PlaySessions
-    for (const player of [...leftPlayers, ...joinedPlayers]) {
-      await Player.update(player, server.id);
-    }
 
     // Update overviews
     const guildServers = await prisma.guildServerTrack
@@ -278,6 +340,25 @@ const Server = {
 
     if (guildServers) {
       await Server.updateOverviews(...guildServers);
+    }
+
+    // Send notifications
+    for (const playerId of joinedPlayers) {
+      const player = await prisma.player.findUnique({
+        where: {
+          id: playerId,
+        },
+      });
+      if (player) await Notifications.broadcastPlayerJoined(player);
+    }
+
+    for (const playerId of leftPlayers) {
+      const player = await prisma.player.findUnique({
+        where: {
+          id: playerId,
+        },
+      });
+      if (player) await Notifications.broadcastPlayerLeft(player);
     }
 
     return updated;
@@ -327,82 +408,32 @@ const Server = {
       });
     }
   },
-
-  // add: async function (serverId: string): Promise<ServerModel | undefined> {
-  //   const existingServer = await prisma.server.findUnique({
-  //     where: {
-  //       id: serverId,
-  //     },
-  //   });
-  //
-  //   if (
-  //     existingServer &&
-  //     !isOlderThan(existingServer.updatedAt, SERVER_REFRESH_TIME)
-  //   ) {
-  //     return existingServer;
-  //   }
-  //
-  //   const serverInfo = await getServerInfo(serverId);
-  //
-  //   if (!serverInfo) {
-  //     console.error("Could not fetch rust server.");
-  //     return;
-  //   }
-  //
-  //   if (serverInfo?.relationships?.game?.data?.id !== "rust") {
-  //     nonRustServerIds.push(serverId);
-  //
-  //     // console.log(`Skipping ${serverInfo?.relationships?.game?.data?.id} server`);
-  //     return;
-  //   }
-  //
-  //   if (!existingServer) {
-  //     if (nonRustServerIds.includes(serverId)) return;
-  //
-  //     const newServer = await prisma.rustServer
-  //       .create({
-  //         data: {
-  //           id: <string>serverInfo?.id,
-  //           name: <string>serverInfo?.attributes?.name,
-  //           wipe: <string>serverInfo?.attributes?.details?.rust_last_wipe,
-  //           mapUrl: serverInfo?.attributes?.details?.rust_maps?.url,
-  //           mapPreview:
-  //             serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
-  //         },
-  //       })
-  //       .catch((err) => {
-  //         console.error("Could not create new server", err);
-  //       });
-  //
-  //     if (newServer) {
-  //       // console.log("Created new server", serverInfo.id);
-  //     }
-  //
-  //     return newServer || undefined;
-  //   } else {
-  //     const updatedServer = await prisma.rustServer
-  //       .update({
-  //         where: {
-  //           id: serverId,
-  //         },
-  //         data: {
-  //           id: <any>serverInfo?.id,
-  //           name: <any>serverInfo?.attributes?.name,
-  //           wipe: <any>serverInfo?.attributes?.details?.rust_last_wipe,
-  //           mapUrl: serverInfo?.attributes?.details?.rust_maps?.url,
-  //           mapPreview:
-  //             serverInfo?.attributes?.details?.rust_maps?.thumbnailUrl,
-  //         },
-  //       })
-  //       .catch(console.error);
-  //
-  //     if (updatedServer) {
-  //       console.log("Updated server", updatedServer.id);
-  //     }
-  //
-  //     return updatedServer || undefined;
-  //   }
-  // },
 };
+
+class UpdateTask extends Task<
+  Prisma.ServerGetPayload<{ include: { players: true } }> | undefined
+> {
+  server: Prisma.ServerGetPayload<{ include: { players: true } }>;
+  serverId: string;
+
+  constructor(server: Prisma.ServerGetPayload<{ include: { players: true } }>) {
+    super();
+
+    this.server = server;
+    this.serverId = server.id;
+  }
+
+  getKey(): string {
+    return this.serverId;
+  }
+
+  shouldRun(): boolean {
+    return this.server.updatedAt.getTime() < Date.now() - 1000 * 30;
+  }
+
+  execute() {
+    return Server._update(this.server);
+  }
+}
 
 export default Server;

@@ -134,7 +134,7 @@ export abstract class CommandAbstract {
       return;
     }
 
-    const player = await Player.getOrCreate(playerId);
+    const player = await Player.updateOrCreate(playerId);
 
     if (!player) {
       await this.replyEphemeral(interaction, "Could not fetch target player.");

@@ -16,7 +16,7 @@ export const getOrCreateChannel = async function (
 
   if (!channel) {
     channel = await guild.channels
-      .create({ name, topic: "Tracked Servers" })
+      .create({ name, topic: "servers" })
       .catch((err) => undefined);
   }
 

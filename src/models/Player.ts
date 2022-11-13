@@ -15,6 +15,7 @@ import {
 import Battlemetrics from "../apis/Battlemetrics";
 import PlaySession from "./PlaySession";
 import { getPlayerInfo } from "../apis/battemetrics/get-player-info";
+import { getSessions } from "../apis/battemetrics/get-sessions";
 
 export type PlayerModel = PrismaPlayer;
 
@@ -38,67 +39,81 @@ export type AnalyzedPlayer = PlayerWithRelations & {
 };
 
 const Player = {
-  getOrCreate: async function (
-    playerId: string
-  ): Promise<PrismaPlayer | undefined> {
-    let player = await prisma.player
-      .findUnique({
-        where: {
-          id: playerId,
-        },
-      })
-      .catch(console.error);
-
-    if (player === null) {
-      const playerInfo = await Battlemetrics.getPlayerInfo(playerId);
-
-      if (!playerInfo) {
-        console.error("Could not fetch player info.");
-        return undefined;
-      }
-
-      console.log("Creating a new player " + playerInfo.attributes?.name);
-      player = await prisma.player
-        .create({
-          data: {
-            id: <any>playerInfo?.id,
-            name: <any>playerInfo?.attributes?.name,
-          },
-        })
-        .catch(console.error);
-
-      if (player) await PlaySession.updatePlayerSessions(player);
-    }
-
-    return player || undefined;
-  },
-
-  update: async function (
-    player: PlayerModel,
+  /**
+   * Updates or creates player's info and play sessions and returns the updated player.
+   */
+  updateOrCreate: async function (
+    playerId: string,
     serverId?: string
   ): Promise<PrismaPlayer | undefined> {
-    const playerInfo = await getPlayerInfo(player.id);
-    const name = playerInfo?.attributes?.name;
-    if (!playerInfo || !name) return;
-
-    await PlaySession.updatePlayerSessions(
-      player,
-      serverId ? [serverId] : undefined
+    const playerInfo = await getPlayerInfo(playerId);
+    const sessions = await PlaySession._updatePlayerSessions(
+      playerId,
+      serverId
     );
+
+    if (!playerInfo || !sessions) {
+      console.error("Could not fetch player info.", playerId);
+      return undefined;
+    }
+
+    const name = playerInfo.attributes?.name;
+
+    if (!name) {
+      console.error("Error parsing fetched player.", playerId);
+      return undefined;
+    }
 
     return (
       (await prisma.player
-        .update({
+        .upsert({
           where: {
-            id: player.id,
+            id: playerId,
           },
-          data: {
+          update: {
             name,
+            sessions: {
+              connect: sessions.map((s) => ({ id: s.id })),
+            },
+          },
+          create: {
+            id: playerId,
+            name,
+            sessions: {
+              connect: sessions.map((s) => ({ id: s.id })),
+            },
           },
         })
         .catch(console.error)) || undefined
     );
   },
+
+  // updateOrCreate: async function (
+  //   player: PlayerModel,
+  //   serverId?: string
+  // ): Promise<PrismaPlayer | undefined> {
+  //   const playerInfo = await getPlayerInfo(player.id);
+  //   const name = playerInfo?.attributes?.name;
+  //   if (!playerInfo || !name) return;
+  //
+  //   await PlaySession.updatePlayerSessions(
+  //     player,
+  //     serverId ? [serverId] : undefined
+  //   );
+  //
+  //   return (
+  //     (await prisma.player
+  //       .update({
+  //         where: {
+  //           id: player.id,
+  //         },
+  //         data: {
+  //           name,
+  //         },
+  //       })
+  //       .catch(console.error)) || undefined
+  //   );
+  // },
 
   analyzePlayer: function (
     player: PlayerWithRelations,

@@ -20,16 +20,18 @@ model Player {
 
   sessions         PlaySession[]
   playerTracks     PlayerTrack[]
+
+  updatedAt        DateTime          @updatedAt @default(now())
 }
 
 model PlaySession {
   id               String           @id
   start            DateTime
   stop             DateTime?
-  player           Player           @relation(fields: [playerId], references: [id])
-  playerId         String
-  server           Server           @relation(fields: [serverId], references: [id])
-  serverId         String
+  player           Player?          @relation(fields: [playerId], references: [id])
+  playerId         String?
+  server           Server?          @relation(fields: [serverId], references: [id])
+  serverId         String?
 }
 
 model Guild {
@@ -99,7 +101,7 @@ model Server {
   wipe     DateTime
   mapUrl   String?
   mapPreview String?
-  updatedAt DateTime                 @updatedAt
+  updatedAt DateTime                 @updatedAt @default(now())
 
   players  Player[]
   sessions PlaySession[]

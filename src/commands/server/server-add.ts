@@ -28,18 +28,25 @@ class ServerAdd extends SubcommandWithGuild {
     const serverId = await this.requireServerId(interaction);
     if (!serverId) return;
 
-    const server = await Server.getOrCreate(serverId);
+    const server = await Server.addServer(serverId, guild);
 
-    if (server) {
-      const guildServer = await Server.track(guild, server);
-      if (guildServer) {
-        const serverWithPlayers = await Server.getOrCreate(serverId);
-        if (serverWithPlayers) await Server.update(serverWithPlayers);
-      }
-    }
+    // if (server) {
+    //   const guildServer = await Server.track(guild, server);
+    //   if (guildServer) {
+    //     const serverWithPlayers = await Server.getOrCreate(serverId);
+    //     if (serverWithPlayers) await Server.update(serverWithPlayers);
+    //   }
+    // }
 
     // await Guild.setTrackedServer(guild.id, serverId);
-    await this.reply(interaction, messages.setTrackedServer);
+    if (server) {
+      await this.reply(interaction, "Server tracked.");
+    } else {
+      await this.reply(
+        interaction,
+        "Could not track server. Is it already being tracked?"
+      );
+    }
   }
 
   getName(): string {

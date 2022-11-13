@@ -32,10 +32,18 @@ export interface PlayerSession {
   };
 }
 
+export interface ParsedSession {
+  id: string;
+  start: string;
+  stop: string | null;
+  playerId: string;
+  serverId: string;
+}
+
 export async function getSessions(
   playerId: string,
   serverIds?: string[]
-): Promise<PlayerSession[] | undefined> {
+): Promise<ParsedSession[] | undefined> {
   return fetch<{ data?: PlayerSession[] }>({
     url: "/players/" + playerId + "/relationships/sessions",
     params: {
@@ -44,7 +52,25 @@ export async function getSessions(
     },
   })
     .then((res) => {
-      return res.data?.data;
+      const parsedSessions: ParsedSession[] = [];
+
+      for (const session of res.data?.data || []) {
+        if (
+          !session.id ||
+          !session.attributes?.start ||
+          !session.relationships?.server?.data?.id
+        )
+          continue;
+        parsedSessions.push({
+          id: session.id,
+          start: session.attributes.start,
+          stop: session.attributes.stop || null,
+          playerId,
+          serverId: session.relationships?.server?.data?.id,
+        });
+      }
+
+      return parsedSessions;
     })
     .catch((err) => {
       console.error(err);

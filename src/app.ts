@@ -8,6 +8,8 @@ import Server from "./models/Server";
 
 export const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+let initialized = false;
+
 const cronCallback = async function () {
   try {
     // await Player.updateAllSessions();
@@ -27,6 +29,7 @@ client.once("ready", async () => {
   cronCallback().then(function () {
     cronJob.start();
     console.log("Cron started, everything ready.");
+    initialized = true;
   });
 });
 
@@ -43,7 +46,7 @@ client.on("guildUpdate", async () => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isChatInputCommand() || !initialized) return;
 
   await execute(interaction);
 });

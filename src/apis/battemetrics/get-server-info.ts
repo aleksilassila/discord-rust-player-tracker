@@ -31,7 +31,7 @@ interface Data {
   };
 }
 
-interface Included {
+interface IncludedPlayer {
   type?: "player";
   id?: string;
   private?: boolean;
@@ -51,12 +51,12 @@ interface Included {
   };
 }
 
-export type ServerInfo = Data & { included?: Included[] };
+export type ServerInfo = Data & { players?: IncludedPlayer[] };
 
 export function getServerInfo(
   serverId: string
 ): Promise<ServerInfo | undefined> {
-  return fetch<{ data?: Data; included?: Included[] }>({
+  return fetch<{ data?: Data; included?: IncludedPlayer[] }>({
     url: "/servers/" + serverId,
     params: {
       include: "player",
@@ -64,7 +64,7 @@ export function getServerInfo(
   })
     .then((res) => ({
       ...res.data?.data,
-      included: res.data?.included,
+      players: res.data?.included,
     }))
     .catch((err) => {
       console.error(err);

@@ -1,8 +1,9 @@
-import { PlaySession, Server as RustServer } from "@prisma/client";
+import { PlaySession, Prisma, Server as RustServer } from "@prisma/client";
 import { PlayerModel } from "./models/Player";
 import { bold, EmbedBuilder, hyperlink } from "discord.js";
 import { analyzeBedtimeSessions, formatAsHours } from "./utils";
 
+// This one is a mess and an unnecessary one
 export const messages = {
   guildRequired: "This command can only be used in a server.",
   playerRequired: "This command requires target player.",
@@ -27,7 +28,15 @@ export const messages = {
   unsetTrackedServer: "Unset tracked server.",
   setTrackedServer: "Tracked server set.",
   trackedPlayerInfo(
-    player: PlayerModel & { sessions: (PlaySession & { server: RustServer })[] }
+    player: Prisma.PlayerGetPayload<{
+      include: {
+        sessions: {
+          include: {
+            server: true;
+          };
+        };
+      };
+    }>
   ) {
     const sessions = player.sessions;
     if (!sessions.length) return "";
@@ -38,7 +47,7 @@ export const messages = {
       const last = data?.bedtimeSessions?.map((l) => l.id).includes(s.id);
 
       return {
-        name: `${last ? "🛌" : ""} ${s.server.name}`,
+        name: `${last ? "🛌" : ""} ${s.server?.name}`,
         value:
           `${s.id}\n` +
           `Stopped at: ${bold(
